@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, User } from '@prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcrypt';
 
 export type SafeUser = Omit<User, 'password'>;
 
@@ -19,10 +20,25 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(data: Prisma.UserCreateInput): Promise<SafeUser> {
-    return this.prisma.user.create({
-      data,
-      select: USER_SELECT_FIELDS,
-    });
+    try {
+      // 1. Hashear contraseña a nivel de base de datos
+      const hashedPassword = await bcrypt.hash(data.password, 12);
+
+      // 2. Guardar y retornar ocultando campos sensibles
+      return await this.prisma.user.create({
+        data: {
+          ...data,
+          password: hashedPassword,
+        },
+        select: USER_SELECT_FIELDS,
+      });
+    } catch (error: any) {
+      // 3. Capturar condición de carrera (TOCTOU)
+      if (error.code === 'P2002') {
+        throw new ConflictException('El correo ya está en uso');
+      }
+      throw new InternalServerErrorException('Error crítico al crear el usuario');
+    }
   }
 
   async findAll(): Promise<SafeUser[]> {
