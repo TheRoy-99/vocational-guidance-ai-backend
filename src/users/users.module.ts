@@ -3,8 +3,9 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 @Module({
+  imports: [],
   controllers: [UsersController],
   providers: [UsersService],
-  exports: [UsersService],
+  exports: [UsersService], //Esto asegura que AuthService pueda usarlo
 })
 export class UsersModule {}
