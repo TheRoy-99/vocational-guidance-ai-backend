@@ -1,0 +1,74 @@
+// Decisión arquitectónica: Definimos dos modelos en esta fase.
+// User: entidad central del sistema.
+// ChasideAssessment: representa una sesión de evaluación vocacional completa.
+// La separación en tabla propia (en vez de columnas en User) sigue SRP:
+// un usuario puede tener múltiples evaluaciones en el futuro.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "***REMOVED***ql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  // La contraseña NUNCA se almacena en texto plano.
+  // bcrypt la hashea antes de llegar a la DB.
+  password  String
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relación 1:N — un user puede tener múltiples assessments
+  assessments ChasideAssessment[]
+
+  @@map("users")
+}
+
+model ChasideAssessment {
+  id        String           @id @default(uuid())
+  // FK hacia User — si el user se borra, sus assessments también (CASCADE)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Json almacena las 98 respuestas tal como llegan del frontend.
+  // Decisión: usamos Json en vez de una tabla normalizada de respuestas
+  // porque las respuestas son un bloque atómico de entrada, nunca se
+  // consultan individualmente por SQL. Esto simplifica el schema MVP.
+  rawAnswers Json
+
+  // Resultados por área CHASIDE (null hasta que el job de IA los calcule)
+  scores     Json?   // { C: 14, H: 8, A: 12, S: 10, I: 15, D: 6, E: 9 }
+
+  // Análisis narrativo generado por Claude AI
+  aiAnalysis String?
+
+  // Estado de procesamiento — clave para el flujo 202 Accepted + BullMQ
+  // PENDING: encolado, esperando al worker de IA
+  // PROCESSING: el worker lo está procesando activamente
+  // PROCESSED: resultados disponibles
+  // FAILED: el job falló tras reintentos
+  status    AssessmentStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chaside_assessments")
+}
+
+enum Role {
+  STUDENT
+  COUNSELOR
+  ADMIN
+}
+
+enum AssessmentStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
