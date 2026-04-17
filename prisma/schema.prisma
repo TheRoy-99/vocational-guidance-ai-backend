@@ -1,0 +1,56 @@
+// Decisión arquitectónica: Definimos dos modelos en esta fase.
+// User: entidad central del sistema.
+// ChasideAssessment: representa una sesión de evaluación vocacional completa.
+// La separación en tabla propia (en vez de columnas en User) sigue SRP:
+// un usuario puede tener múltiples evaluaciones en el futuro.
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+//
+datasource db {
+  provider = "***REMOVED***ql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessments ChasideAssessment[]
+
+  @@map("users")
+}
+
+model ChasideAssessment {
+  id         String           @id @default(uuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rawAnswers Json
+  scores     Json?
+  aiAnalysis String?
+  status     AssessmentStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@map("chaside_assessments")
+}
+
+enum Role {
+  STUDENT
+  COUNSELOR
+  ADMIN
+}
+
+enum AssessmentStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
