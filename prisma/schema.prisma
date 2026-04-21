@@ -29,15 +29,28 @@ model User {
 }
 
 model ChasideAssessment {
-  id         String           @id @default(uuid())
-  userId     String
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Array de { questionId, category, type, value }
   rawAnswers Json
+
+  // Scores CHASIDE: { C: 12, H: 4, A: 8, S: 6, I: 13, D: 3, E: 7 }
   scores     Json?
-  aiAnalysis String?
-  status     AssessmentStatus @default(PENDING)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
+
+  // Contexto adicional procesado: { location: [...], interest: [...], activity: [...] }
+  contextData Json?
+
+  // Respuesta estructurada de Claude
+  aiAnalysis        String?
+  topCareers        Json?
+  notRecommended    Json?
+  idealEnvironment  String?
+
+  status    AssessmentStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@map("chaside_assessments")
 }
