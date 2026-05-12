@@ -41,7 +41,7 @@ export class AuthService {
     });
 
     // 4. Retornar token directamente — UX: el usuario queda logueado al registrarse
-    return this.signToken(user.id, user.email, user.role);
+    return this.signToken(user.id, user.name, user.email, user.role);
   }
 
   async login(dto: LoginDto) {
@@ -57,16 +57,16 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    return this.signToken(user.id, user.email, user.role);
+    return this.signToken(user.id, user.name, user.email, user.role);
   }
 
-  private signToken(userId: string, email: string, role: string) {
+  private signToken(userId: string, name: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
     return {
       accessToken: this.jwtService.sign(payload),
       // Retornamos info básica del user para que el frontend
       // no necesite hacer un GET /users/me adicional tras el login
-      user: { id: userId, email, role },
+      user: { id: userId, name, email, role },
     };
   }
 }

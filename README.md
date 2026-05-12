@@ -1,103 +1,367 @@
-<<<<<<< HEAD
+# ORIENTA AI — Backend
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend para el sistema de orientación vocacional **ORIENTA**, impulsado por Inteligencia Artificial mediante el test CHASIDE.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Tech Stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Capa | Tecnología |
+|---|---|
+| Framework | NestJS + TypeScript |
+| Base de datos | PostgreSQL (Prisma ORM v7) |
+| Autenticación | JWT (Passport) |
+| Cola de trabajos | BullMQ + Redis |
+| Inteligencia Artificial | Groq API (Llama 3.3 70B) — reemplazable por Claude |
+| Infraestructura local | Docker + Docker Compose |
 
-## Project setup
+---
 
-```bash
-$ npm install
+## Arquitectura
+
+El proyecto sigue **Arquitectura Hexagonal con Domain-Driven Design**, dividido en módulos con responsabilidad única:
+
+```
+AppModule
+├── PrismaModule     → acceso global a PostgreSQL
+├── AuthModule       → registro, login, JWT
+├── UsersModule      → CRUD de usuarios
+└── ChasideModule    → motor de inferencia vocacional
+    ├── ChasideController      → endpoints HTTP
+    ├── ChasideService         → orquesta flujo y DB
+    ├── ChasideScoringService  → algoritmo matemático CHASIDE
+    ├── ChasideAiService       → integración Groq/Claude
+    └── ChasideProcessor       → worker BullMQ
 ```
 
-## Compile and run the project
+### Reglas de ingeniería
+- **Cero lógica de negocio en controladores** — solo reciben DTOs y delegan
+- **SRP estricto** — cada servicio tiene una única responsabilidad
+- **202 Accepted** para procesos asíncronos (análisis IA)
+- **Módulos desacoplados** — cada módulo es independiente
 
-```bash
-# development
-$ npm run start
+---
 
-# watch mode
-$ npm run start:dev
+## Flujo del Motor CHASIDE
 
-# production mode
-$ npm run start:prod
+```
+POST /chaside/submit
+        │
+        ▼
+  Valida DTO (class-validator)
+        │
+        ▼
+  Guarda en DB → status: PENDING
+        │
+        ▼
+  Encola job en Redis (BullMQ)
+        │
+        └──→ 202 Accepted { assessmentId }
+
+  [Worker en background]
+        │
+        ▼
+  ScoringService → calcula scores por categoría
+        │
+        ▼
+  AiService → llama a Groq/Claude con scores + contexto
+        │
+        ▼
+  Actualiza DB → status: PROCESSED + resultados
+
+GET /chaside/:id/results → polling del frontend
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+## Estructura de Carpetas
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```
+orienta-backend/
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+├── src/
+│   ├── main.ts
+│   ├── app.module.ts
+│   ├── prisma/
+│   │   ├── prisma.service.ts
+│   │   └── prisma.module.ts
+│   ├── auth/
+│   │   ├── auth.module.ts
+│   │   ├── auth.controller.ts
+│   │   ├── auth.service.ts
+│   │   ├── dto/
+│   │   │   ├── register.dto.ts
+│   │   │   └── login.dto.ts
+│   │   └── guards/
+│   │       ├── jwt-auth.guard.ts
+│   │       └── jwt.strategy.ts
+│   ├── users/
+│   │   ├── users.module.ts
+│   │   ├── users.controller.ts
+│   │   ├── users.service.ts
+│   │   └── dto/
+│   │       └── update-user.dto.ts
+│   └── chaside/
+│       ├── chaside.module.ts
+│       ├── chaside.controller.ts
+│       ├── chaside.service.ts
+│       ├── constants/
+│       │   └── chaside-data.ts
+│       ├── dto/
+│       │   └── submit-assessment.dto.ts
+│       ├── processors/
+│       │   └── chaside.processor.ts
+│       └── services/
+│           ├── chaside-scoring.service.ts
+│           ├── chaside-ai.service.ts
+│           └── chaside.service.ts
+├── docker-compose.yml
+└── .env
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Instalación y Setup Local
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Prerrequisitos
+- Node.js 18+
+- Docker Desktop
+- Git
+
+### 1. Clonar e instalar dependencias
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+git clone <repo-url>
+cd orienta-backend
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 2. Configurar variables de entorno
 
-## Resources
+Crea un archivo `.env` en la raíz:
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+DATABASE_URL="***REMOVED***ql://tucontraseña:password@localhost:5432/orienta_db"
+JWT_SECRET="tu_secret_muy_largo_y_aleatorio"
+JWT_EXPIRES_IN="1d"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+GROQ_API_KEY=gsk_tu_api_key_aqui
+PORT=3000
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+> Para obtener la API key de Groq: [console.groq.com](https://console.groq.com) → API Keys → Create API Key
 
-## Support
+### 3. Levantar infraestructura con Docker
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+docker-compose up -d
 
-## Stay in touch
+# Verificar que están corriendo
+docker ps
+# Debes ver: orienta_***REMOVED*** y orienta_redis
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### 4. Aplicar migraciones de base de datos
 
-## License
+```bash
+npx prisma migrate dev
+npx prisma generate
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-=======
-# vocational-guidance-ai-backend
-ackend para asistente de orientación vocacional impulsado por IA
->>>>>>> bd8f45b8c99d1acf0a2f8a3bb970e040454634e8
+### 5. Arrancar el servidor
+
+```bash
+npm run start:dev
+```
+
+El servidor corre en: `http://localhost:3000/api/v1`
+
+---
+
+## Endpoints Disponibles
+
+### Auth
+
+| Método | Endpoint | Auth | Body | Respuesta |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/register` | ❌ | `{ name, email, password }` | `{ accessToken, user }` |
+| POST | `/api/v1/auth/login` | ❌ | `{ email, password }` | `{ accessToken, user }` |
+
+### Users
+
+| Método | Endpoint | Auth | Descripción |
+|---|---|---|---|
+| GET | `/api/v1/users` | ✅ JWT | Listar todos los usuarios |
+| GET | `/api/v1/users/:id` | ✅ JWT | Obtener usuario por ID |
+| PATCH | `/api/v1/users/:id` | ✅ JWT | Actualizar usuario |
+| DELETE | `/api/v1/users/:id` | ✅ JWT | Eliminar usuario |
+
+### CHASIDE
+
+| Método | Endpoint | Auth | Respuesta | Descripción |
+|---|---|---|---|---|
+| POST | `/api/v1/chaside/submit` | ✅ JWT | `202 { assessmentId, status }` | Envía respuestas del test |
+| GET | `/api/v1/chaside/:id/results` | ✅ JWT | `200 { scores, aiAnalysis, topCareers... }` | Consulta resultados |
+| GET | `/api/v1/chaside/my-assessments` | ✅ JWT | `200 [{ id, status, scores, createdAt }]` | Historial del usuario |
+
+---
+
+## Formato del Test CHASIDE
+
+### Categorías de preguntas
+
+| Categoría | Descripción | Tipo |
+|---|---|---|
+| `C` | Científico | boolean / scale |
+| `H` | Humanístico | boolean / scale |
+| `A` | Artístico | boolean / scale |
+| `S` | Social | boolean / scale |
+| `I` | Investigativo | boolean / scale |
+| `D` | Dirigente | boolean / scale |
+| `E` | Emprendedor | boolean / scale |
+| `LOCATION` | Contexto de localización | boolean |
+| `INTEREST` | Intereses generales | scale |
+| `ACTIVITY` | Actividades en tiempo libre | boolean |
+| `ACADEMIC` | Perfil académico | scale |
+
+### Ejemplo de request
+
+```json
+POST /api/v1/chaside/submit
+Authorization: Bearer <token>
+
+{
+  "answers": [
+    { "questionId": 1,  "category": "C",        "type": "boolean", "value": 1 },
+    { "questionId": 2,  "category": "I",        "type": "boolean", "value": 1 },
+    { "questionId": 3,  "category": "INTEREST", "type": "scale",   "value": 4 },
+    { "questionId": 4,  "category": "LOCATION", "type": "boolean", "value": 1 }
+  ]
+}
+```
+
+### Ejemplo de respuesta (después de PROCESSED)
+
+```json
+{
+  "id": "uuid",
+  "status": "PROCESSED",
+  "scores": { "C": 12, "H": 4, "A": 8, "S": 6, "I": 13, "D": 3, "E": 7 },
+  "aiAnalysis": "Análisis narrativo personalizado del perfil...",
+  "topCareers": [
+    { "career": "Ingeniería de Sistemas", "justification": "..." }
+  ],
+  "notRecommended": [
+    { "career": "Derecho", "reason": "..." }
+  ],
+  "idealEnvironment": "Laboratorios, empresas de tecnología..."
+}
+```
+
+### Estados del Assessment
+
+```
+PENDING     → Encolado, worker no ha iniciado
+PROCESSING  → Worker activo, IA procesando
+PROCESSED   → Resultados listos ✅
+FAILED      → Falló tras 3 reintentos ❌
+```
+
+---
+
+## Integración desde el Frontend (Next.js)
+
+### 1. Login y guardar token
+
+```typescript
+const res = await fetch('http://localhost:3000/api/v1/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+})
+const { accessToken } = await res.json()
+localStorage.setItem('token', accessToken)
+```
+
+### 2. Enviar respuestas del test
+
+```typescript
+const res = await fetch('http://localhost:3000/api/v1/chaside/submit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('token')}`
+  },
+  body: JSON.stringify({ answers })
+})
+const { assessmentId } = await res.json() // 202 Accepted
+```
+
+### 3. Polling hasta que la IA termine
+
+```typescript
+const pollResults = (assessmentId: string) => {
+  const interval = setInterval(async () => {
+    const res = await fetch(`http://localhost:3000/api/v1/chaside/${assessmentId}/results`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+    const data = await res.json()
+
+    if (data.status === 'PROCESSED') {
+      clearInterval(interval)
+      // redirigir a pantalla de resultados con data
+    }
+
+    if (data.status === 'FAILED') {
+      clearInterval(interval)
+      // mostrar error al usuario
+    }
+  }, 3000) // polling cada 3 segundos
+}
+```
+
+---
+
+## Git Flow
+
+```
+main        → producción (solo releases estables)
+develop     → integración (base de todas las features)
+feature/*   → desarrollo de funcionalidades
+```
+
+### Ramas actuales
+- `feature/auth-and-users-base` →  mergeada a develop
+- `feature/chaside-engine` → no esta mergeada a develop
+
+---
+
+## Estado del Proyecto
+
+| Módulo | Estado |
+|---|---|
+| Auth (registro, login, JWT)
+| Users (CRUD)
+| CHASIDE engine (scoring)
+| Integración IA (Groq) 
+| Cola asíncrona (BullMQ)
+---
+
+## Variables de Entorno Requeridas
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `DATABASE_URL` | URL de conexión PostgreSQL | `***REMOVED***ql://user:pass@localhost:5432/db` |
+| `JWT_SECRET` | Secret para firmar tokens JWT | string largo y aleatorio |
+| `JWT_EXPIRES_IN` | Expiración del token | `7d` |
+| `REDIS_HOST` | Host de Redis | `localhost` |
+| `REDIS_PORT` | Puerto de Redis | `6379` |
+| `GROQ_API_KEY` | API key de Groq | `gsk_...` |
+| `PORT` | Puerto del servidor | `3000` |
