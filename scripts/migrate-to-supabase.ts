@@ -9,24 +9,38 @@
  * 4. Los datos se exportarán y se intentará importar a Supabase
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const LOCAL_DB_URL = 'postgresql://postgres:postgres@localhost:5433/orienta_db';
 const EXPORT_PATH = path.join(process.cwd(), 'migrations', `export-${Date.now()}.json`);
 
+function createClient(databaseUrl: string): PrismaClient {
+  const previousUrl = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = databaseUrl;
+  const client = new PrismaClient();
+
+  if (previousUrl) {
+    process.env.DATABASE_URL = previousUrl;
+  } else {
+    delete process.env.DATABASE_URL;
+  }
+
+  return client;
+}
+
+function toInputJsonValue(
+  value: Prisma.InputJsonValue | Prisma.JsonNullValueInput | null | undefined,
+): Prisma.InputJsonValue | Prisma.JsonNullValueInput {
+  return value === null || value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+}
+
 async function migrateToSupabase() {
   console.log('🚀 Iniciando migración de datos a Supabase...\n');
 
   // Crear prisma local
-  const localPrisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: LOCAL_DB_URL,
-      },
-    },
-  });
+  const localPrisma = createClient(LOCAL_DB_URL);
 
   // Crear prisma para Supabase (usa variable de entorno)
   const supabasePrisma = new PrismaClient();
@@ -66,10 +80,11 @@ async function migrateToSupabase() {
 
     for (const user of users) {
       try {
+        const { id, createdAt, updatedAt, ...userData } = user;
         await supabasePrisma.user.upsert({
-          where: { id: user.id },
-          update: user,
-          create: user,
+          where: { id },
+          update: userData,
+          create: userData,
         });
         usersInserted++;
       } catch (error) {
@@ -80,10 +95,30 @@ async function migrateToSupabase() {
 
     for (const assessment of assessments) {
       try {
+        const {
+          id,
+          createdAt,
+          updatedAt,
+          rawAnswers,
+          scores,
+          aiAnalysis,
+          ...assessmentData
+        } = assessment;
+
         await supabasePrisma.chasideAssessment.upsert({
-          where: { id: assessment.id },
-          update: assessment,
-          create: assessment,
+          where: { id },
+          update: {
+            ...assessmentData,
+            rawAnswers: toInputJsonValue(rawAnswers),
+            scores: scores === null ? Prisma.JsonNull : scores,
+            aiAnalysis,
+          },
+          create: {
+            ...assessmentData,
+            rawAnswers: toInputJsonValue(rawAnswers),
+            scores: scores === null ? Prisma.JsonNull : scores,
+            aiAnalysis,
+          },
         });
         assessmentsInserted++;
       } catch (error) {
