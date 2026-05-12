@@ -37,7 +37,7 @@ function toInputJsonValue(
 }
 
 async function migrateToSupabase() {
-  console.log('🚀 Iniciando migración de datos a Supabase...\n');
+  console.log('Iniciando migración de datos a Supabase...\n');
 
   // Crear prisma local
   const localPrisma = createClient(LOCAL_DB_URL);
@@ -47,7 +47,7 @@ async function migrateToSupabase() {
 
   try {
     // Paso 1: Exportar datos locales
-    console.log('📤 Exportando datos de PostgreSQL local...');
+    console.log('Exportando datos de PostgreSQL local...');
     const users = await localPrisma.user.findMany();
     const assessments = await localPrisma.chasideAssessment.findMany();
 
@@ -68,12 +68,12 @@ async function migrateToSupabase() {
       fs.mkdirSync(path.dirname(EXPORT_PATH), { recursive: true });
     }
     fs.writeFileSync(EXPORT_PATH, JSON.stringify(exportData, null, 2));
-    console.log(`✅ Datos exportados a: ${EXPORT_PATH}`);
+    console.log(`Datos exportados a: ${EXPORT_PATH}`);
     console.log(`   - Users: ${users.length}`);
     console.log(`   - Assessments: ${assessments.length}\n`);
 
     // Paso 2: Insertar en Supabase
-    console.log('📥 Insertando datos en Supabase...');
+    console.log('Insertando datos en Supabase...');
     let usersInserted = 0;
     let assessmentsInserted = 0;
     let errors = 0;
@@ -112,13 +112,13 @@ async function migrateToSupabase() {
             rawAnswers: toInputJsonValue(rawAnswers),
             scores: scores === null ? Prisma.JsonNull : scores,
             aiAnalysis,
-          },
+          } as any,
           create: {
             ...assessmentData,
             rawAnswers: toInputJsonValue(rawAnswers),
             scores: scores === null ? Prisma.JsonNull : scores,
             aiAnalysis,
-          },
+          } as any,
         });
         assessmentsInserted++;
       } catch (error) {

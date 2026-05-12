@@ -16,9 +16,6 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');  // ← esta línea debe estar
 
-  await app.listen(process.env.PORT ?? 3000);
-  console.log(`ORIENTA API corriendo en: ${await app.getUrl()}/api/v1`);
-  // Habilitar CORS para comunicación frontend-backend
   app.enableCors({
     origin: [
       'http://localhost:3000',      // Desarrollo local
@@ -31,11 +28,6 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe());
-
-  // Prefijo global de API
-  app.setGlobalPrefix('api');
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
