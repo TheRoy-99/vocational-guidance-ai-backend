@@ -11,7 +11,7 @@ generator client {
 
 //
 datasource db {
-  provider = "***REMOVED***ql"
+  provider = "postgresql"
 }
 
 model User {
