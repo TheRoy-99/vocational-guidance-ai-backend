@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ChasideService } from './services/chaside.service';
 import { SubmitAssessmentDto } from './dto/submit-assessment.dto';
+import { VocationalChatDto } from './dto/vocational-chat.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard)
@@ -20,7 +21,7 @@ export class ChasideController {
   constructor(private readonly chasideService: ChasideService) {}
 
   @Post('submit')
-  @HttpCode(HttpStatus.ACCEPTED) // 202 — encolado, no procesado aún
+  @HttpCode(HttpStatus.OK)
   submit(@Request() req: any, @Body() dto: SubmitAssessmentDto) {
     return this.chasideService.submit(req.user.id, dto);
   }
@@ -36,5 +37,11 @@ export class ChasideController {
     @Request() req: any,
   ) {
     return this.chasideService.getResults(id, req.user.id);
+  }
+
+  @Post('chat')
+  @HttpCode(HttpStatus.OK)
+  chat(@Request() req: any, @Body() dto: VocationalChatDto) {
+    return this.chasideService.chat(req.user.id, dto);
   }
 }

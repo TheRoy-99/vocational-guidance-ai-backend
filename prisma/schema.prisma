@@ -23,7 +23,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assessments ChasideAssessment[]
+  assessments    ChasideAssessment[]
+  icfesAnalyses   IcfesAnalysis[]
 
   @@map("users")
 }
@@ -55,6 +56,33 @@ model ChasideAssessment {
   @@map("chaside_assessments")
 }
 
+model IcfesAnalysis {
+  id                   String               @id @default(uuid())
+  userId               String
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName             String?
+  fileSize             Int?
+  sourceHash           String?
+  candidateName        String?
+  registrationNumber   String?
+  applicationDate      String?
+  publicationDate      String?
+  municipalityDepartment String?
+  institution          String?
+  globalScore          Int
+  globalPercentile     Int?
+  subjectScores        Json
+  strengths            Json
+  weaknesses           Json
+  recommendations      Json
+  summary              String
+  status               IcfesAnalysisStatus @default(PROCESSED)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@map("icfes_analyses")
+}
+
 enum Role {
   STUDENT
   COUNSELOR
@@ -64,6 +92,11 @@ enum Role {
 enum AssessmentStatus {
   PENDING
   PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum IcfesAnalysisStatus {
   PROCESSED
   FAILED
 }
