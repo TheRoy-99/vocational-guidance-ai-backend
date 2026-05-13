@@ -36,6 +36,12 @@ function toInputJsonValue(
   return value === null || value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
 }
 
+function toNullableJsonValue(
+  value: Prisma.InputJsonValue | Prisma.JsonNullValueInput | null | undefined,
+): Prisma.InputJsonValue | Prisma.JsonNullValueInput {
+  return value === null || value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+}
+
 async function migrateToSupabase() {
   console.log('🚀 Iniciando migración de datos a Supabase...\n');
 
@@ -101,6 +107,9 @@ async function migrateToSupabase() {
           updatedAt,
           rawAnswers,
           scores,
+          contextData,
+          topCareers,
+          notRecommended,
           aiAnalysis,
           ...assessmentData
         } = assessment;
@@ -111,12 +120,18 @@ async function migrateToSupabase() {
             ...assessmentData,
             rawAnswers: toInputJsonValue(rawAnswers),
             scores: scores === null ? Prisma.JsonNull : scores,
+            contextData: toNullableJsonValue(contextData),
+            topCareers: toNullableJsonValue(topCareers),
+            notRecommended: toNullableJsonValue(notRecommended),
             aiAnalysis,
           },
           create: {
             ...assessmentData,
             rawAnswers: toInputJsonValue(rawAnswers),
             scores: scores === null ? Prisma.JsonNull : scores,
+            contextData: toNullableJsonValue(contextData),
+            topCareers: toNullableJsonValue(topCareers),
+            notRecommended: toNullableJsonValue(notRecommended),
             aiAnalysis,
           },
         });

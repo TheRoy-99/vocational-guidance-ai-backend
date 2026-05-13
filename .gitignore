@@ -1,17 +1,24 @@
+<<<<<<< HEAD
 # compiled output
 /dist
 /node_modules
 /build
 
+=======
+>>>>>>> bd8f45b8c99d1acf0a2f8a3bb970e040454634e8
 # Logs
 logs
 *.log
 npm-debug.log*
+<<<<<<< HEAD
 pnpm-debug.log*
+=======
+>>>>>>> bd8f45b8c99d1acf0a2f8a3bb970e040454634e8
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+<<<<<<< HEAD
 # OS
 .DS_Store
 
@@ -46,6 +53,10 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+=======
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+>>>>>>> bd8f45b8c99d1acf0a2f8a3bb970e040454634e8
 
 # Runtime data
 pids
@@ -53,6 +64,7 @@ pids
 *.seed
 *.pid.lock
 
+<<<<<<< HEAD
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

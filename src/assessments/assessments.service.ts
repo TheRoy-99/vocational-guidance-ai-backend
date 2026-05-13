@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
@@ -12,6 +13,8 @@ import { analyzeAnswers } from './utils/career-engine';
 
 @Injectable()
 export class AssessmentsService {
+  private readonly logger = new Logger(AssessmentsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(
@@ -35,6 +38,10 @@ export class AssessmentsService {
         },
       });
     } catch (error: any) {
+      this.logger.error(
+        'Error creating assessment',
+        error?.stack || error?.message || String(error),
+      );
       if (error.code === 'P2003') {
         throw new NotFoundException('Usuario no encontrado');
       }
