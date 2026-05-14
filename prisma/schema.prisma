@@ -25,6 +25,7 @@ model User {
 
   assessments    ChasideAssessment[]
   icfesAnalyses   IcfesAnalysis[]
+  chatConversations ChatConversation[]
 
   @@map("users")
 }
@@ -81,6 +82,43 @@ model IcfesAnalysis {
   updatedAt            DateTime            @updatedAt
 
   @@map("icfes_analyses")
+}
+
+model ChatConversation {
+  id                String         @id @default(uuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contextSignature  String
+  topic             String         @default("VOCATIONAL")
+  summary           String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  messages          ChatMessage[]
+
+  @@index([userId, contextSignature])
+  @@index([userId, updatedAt])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id                 String           @id @default(uuid())
+  conversationId     String
+  conversation       ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contextSignature   String
+  role               String
+  content            String
+  normalizedContent  String
+  turnKey            String
+  cacheSourceTurnKey String?
+  metadata           Json?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([conversationId, createdAt])
+  @@index([contextSignature, role])
+  @@index([contextSignature, normalizedContent])
+  @@map("chat_messages")
 }
 
 enum Role {

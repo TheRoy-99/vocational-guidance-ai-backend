@@ -9,4 +9,8 @@ export class VocationalChatDto {
   @IsOptional()
   @IsUUID()
   assessmentId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  conversationId?: string;
 }

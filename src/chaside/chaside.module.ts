@@ -6,9 +6,11 @@ import { ChasideService, CHASIDE_QUEUE } from './services/chaside.service';
 import { ChasideScoringService } from './services/chaside-scoring.service';
 import { ChasideAiService } from './services/chaside-ai.service';
 import { ChasideProcessor } from './processors/chaside.processor';
+import { IcfesModule } from '../icfes/icfes.module';
 
 @Module({
   imports: [
+    IcfesModule,
     BullModule.registerQueueAsync({
       name: CHASIDE_QUEUE,
       imports: [ConfigModule],

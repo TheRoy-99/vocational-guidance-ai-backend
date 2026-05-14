@@ -44,4 +44,9 @@ export class ChasideController {
   chat(@Request() req: any, @Body() dto: VocationalChatDto) {
     return this.chasideService.chat(req.user.id, dto);
   }
+
+  @Get('chat/history')
+  getChatHistory(@Request() req: any) {
+    return this.chasideService.getChatHistory(req.user.id);
+  }
 }
