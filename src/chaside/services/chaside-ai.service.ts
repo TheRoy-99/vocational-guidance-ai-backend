@@ -17,10 +17,29 @@ type AssessmentSnapshot = {
   updatedAt?: Date | string;
 };
 
+type ConversationTurn = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+type IcfesAnalysisSnapshot = {
+  globalScore: number;
+  globalPercentile?: number | null;
+  candidateName?: string | null;
+  registrationNumber?: string | null;
+  subjectScores?: unknown;
+  strengths?: unknown;
+  weaknesses?: unknown;
+  recommendations?: unknown;
+  summary?: string;
+};
+
 type VocationalChatInput = {
   message: string;
-  currentAssessment: AssessmentSnapshot;
+  currentAssessment?: AssessmentSnapshot | null;
   recentAssessments: AssessmentSnapshot[];
+  icfesAnalysis?: IcfesAnalysisSnapshot | null;
+  recentConversationTurns?: ConversationTurn[];
 };
 
 export interface AiAnalysisResult {
@@ -86,7 +105,7 @@ export class ChasideAiService {
           },
           {
             role: 'user',
-            content: this.buildChatPrompt(input.message, context),
+            content: this.buildChatPrompt(input.message, context, input.recentConversationTurns ?? []),
           },
         ],
       });
@@ -251,20 +270,32 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
 
   private buildChatSystemPrompt(): string {
     return [
-      'Eres OrientaAI, un asistente de orientación vocacional.',
+      'Eres OrientaAI, un asistente de orientación vocacional especializado en análisis educativos y ocupacionales.',
+      'Tienes acceso a dos tipos de evaluaciones del estudiante:',
+      '1. CHASIDE: un test de intereses y aptitudes que identifica 7 áreas vocacionales (C, H, A, S, I, D, E).',
+      '2. ICFES: resultados de exámenes estandarizados nacionales con puntajes globales, percentiles y desempeño por asignatura.',
+      'Usa AMBAS evaluaciones como contexto para dar orientación más rica y fundamentada.',
+      'Cuando la conversación previa ya contiene una respuesta correcta para una pregunta repetida o muy similar, mantén la lógica, no contradigas respuestas previas y no inventes datos nuevos.',
       'Responde únicamente sobre carreras, estudios, habilidades, fortalezas, áreas de interés, decisiones académicas, rutas formativas y empleabilidad.',
       'Usa el contexto del estudiante como fuente principal de verdad y no inventes datos personales, académicos o psicológicos.',
       'Si la pregunta es ajena a orientación vocacional, responde con una negativa breve y redirige la conversación al tema vocacional.',
       'Mantén el tono claro, cercano, profesional y útil.',
-      'Si faltan datos, dilo explícitamente y sugiere completar o revisar la evaluación.',
+      'Si faltan datos, dilo explícitamente y sugiere completar o revisar las evaluaciones.',
       'Responde en español.',
     ].join(' ');
   }
 
-  private buildChatPrompt(message: string, context: Record<string, unknown>): string {
+  private buildChatPrompt(
+    message: string,
+    context: Record<string, unknown>,
+    recentConversationTurns: ConversationTurn[],
+  ): string {
     return `
 Contexto del estudiante:
 ${JSON.stringify(context, null, 2)}
+
+Historial reciente de la conversación:
+${JSON.stringify(recentConversationTurns.slice(-6), null, 2)}
 
 Pregunta del usuario:
 ${message}
@@ -285,11 +316,16 @@ Instrucciones de seguridad:
           .filter(Boolean)
           .slice(0, 3)
       : [];
+    const icfesAnalysis = context.icfesAnalysis as Record<string, unknown> | undefined;
     const careersText = topCareers.length > 0 ? topCareers.join(', ') : 'las opciones que mejor encajen con tu perfil';
+    const icfesText = icfesAnalysis?.globalScore
+      ? `Tu análisis ICFES también puede orientar la conversación; por ahora tu puntaje global es ${icfesAnalysis.globalScore}.`
+      : '';
 
     return [
       'Puedo ayudarte solo con orientación vocacional.',
       `Con tus resultados actuales, las áreas y carreras que más sentido tienen son: ${careersText}.`,
+      icfesText,
       'Si quieres, puedo ayudarte a comparar carreras, identificar tus fortalezas o traducir tus resultados a un plan de estudio.',
       message.length > 0 ? `Si tu pregunta es más específica, puedo enfocarme en: ${message}` : '',
     ]
@@ -298,8 +334,7 @@ Instrucciones de seguridad:
   }
 
   private buildChatContext(input: VocationalChatInput): Record<string, unknown> {
-    return {
-      currentAssessment: this.serializeAssessment(input.currentAssessment),
+    const context: Record<string, unknown> = {
       recentAssessments: input.recentAssessments.map((assessment) => this.serializeAssessment(assessment)),
       guidanceRules: {
         scope: 'vocational_only',
@@ -307,6 +342,27 @@ Instrucciones de seguridad:
         avoidInventingData: true,
       },
     };
+
+    if (input.currentAssessment) {
+      context.currentAssessment = this.serializeAssessment(input.currentAssessment);
+    }
+
+    // Incluir ICFES si existe
+    if (input.icfesAnalysis) {
+      context.icfesAnalysis = {
+        globalScore: input.icfesAnalysis.globalScore,
+        globalPercentile: input.icfesAnalysis.globalPercentile,
+        candidateName: input.icfesAnalysis.candidateName,
+        registrationNumber: input.icfesAnalysis.registrationNumber,
+        subjectScores: input.icfesAnalysis.subjectScores,
+        strengths: input.icfesAnalysis.strengths,
+        weaknesses: input.icfesAnalysis.weaknesses,
+        recommendations: input.icfesAnalysis.recommendations,
+        summary: input.icfesAnalysis.summary,
+      };
+    }
+
+    return context;
   }
 
   private serializeAssessment(assessment: AssessmentSnapshot): Record<string, unknown> {

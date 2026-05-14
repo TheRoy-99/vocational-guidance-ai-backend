@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { AssessmentsModule } from './assessments/assessments.module';
 import { ChasideModule } from './chaside/chaside.module';
 import { IcfesModule } from './icfes/icfes.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { IcfesModule } from './icfes/icfes.module';
     AssessmentsModule,
     ChasideModule,
     IcfesModule,
+    FeedbackModule,
   ],
 })
 export class AppModule {}
