@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: vocational-guidance-ai-backend
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=256
+      - key: PORT
+        value: 3001
