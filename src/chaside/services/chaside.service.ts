@@ -174,7 +174,6 @@ export class ChasideService {
     }
 
     const conversation: any = await this.resolveConversation(userId, context.contextSignature, dto.conversationId);
-    const recentConversationTurns = this.extractRecentConversationTurns(conversation.messages);
     const cachedTurn = await this.findSimilarCachedTurn(userId, context.contextSignature, dto.message);
 
     const turnKey = randomUUID();
@@ -210,11 +209,21 @@ export class ChasideService {
 
         chasideAnalysis: context.currentAssessment ?? undefined,
 
-        recentAssessments: context.recentAssessments,
+        icfesAnalysis: context.latestIcfesAnalysis
+          ? {
+              globalScore: context.latestIcfesAnalysis.globalScore,
+              globalPercentile: context.latestIcfesAnalysis.globalPercentile,
+              subjectScores: Array.isArray(context.latestIcfesAnalysis.subjectScores)
+                ? context.latestIcfesAnalysis.subjectScores as Array<{
+                    subject: string;
+                    score: number;
+                    percentile?: number | null;
+                  }>
+                : undefined,
+            }
+          : undefined,
 
-        icfesAnalysis: context.latestIcfesAnalysis,
-
-        recentConversationTurns: recentConversationTurns as any,
+        
       });
     }
 

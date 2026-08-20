@@ -17,21 +17,22 @@ type AssessmentSnapshot = {
   updatedAt?: Date | string;
 };
 
-type ConversationTurn = {
-  role: 'user' | 'assistant';
-  content: string;
+type ChatChasideContext = {
+  scores: Record<string, number>;
+  primaryAreas: string[];
+  profileSummary?: string;
+  careerInterests?: string[];
 };
+
 
 type IcfesAnalysisSnapshot = {
   globalScore: number;
   globalPercentile?: number | null;
-  candidateName?: string | null;
-  registrationNumber?: string | null;
-  subjectScores?: unknown;
-  strengths?: unknown;
-  weaknesses?: unknown;
-  recommendations?: unknown;
-  summary?: string;
+  subjectScores?: Array<{
+    subject: string;
+    score: number;
+    percentile?: number | null;
+  }>;
 };
 
 type UserProfileContext = {
@@ -42,31 +43,24 @@ type UserProfileContext = {
 };
 
 type ConversationMemory = {
+  interests?: string[];
   preferences?: string[];
   goals?: string[];
   importantFacts?: string[];
+  discussedCareers?: string[];
+  currentTopics?: string[];
 };
 
 type VocationalChatInput = {
   message: string;
 
-  // Perfil básico del estudiante
   userProfile?: UserProfileContext | null;
 
-  // Resultado CHASIDE
   chasideAnalysis?: AssessmentSnapshot | null;
 
-  // Otros resultados/evaluaciones disponibles
-  recentAssessments?: AssessmentSnapshot[];
-
-  // Resultado ICFES
   icfesAnalysis?: IcfesAnalysisSnapshot | null;
 
-  // Memoria persistente del estudiante
   conversationMemory?: ConversationMemory | null;
-
-  // Últimos mensajes de la conversación actual
-  recentConversationTurns?: ConversationTurn[];
 };
 
 export interface AiAnalysisResult {
@@ -83,14 +77,14 @@ export class ChasideAiService {
   private readonly logger = new Logger(ChasideAiService.name);
 
   constructor() {
-  this.logger.log(
-    `GROQ_API_KEY configurada: ${!!process.env.GROQ_API_KEY}`,
-  );
+    this.logger.log(
+      `GROQ_API_KEY configurada: ${!!process.env.GROQ_API_KEY}`,
+    );
 
-  this.client = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-  });
-}
+    this.client = new Groq({
+      apiKey: process.env.GROQ_API_KEY,
+    });
+  }
 
   async analyze(scores: ChasideScores, contextData: ContextData): Promise<AiAnalysisResult> {
     this.logger.log('Llamando a Groq API para análisis CHASIDE...');
@@ -199,6 +193,31 @@ export class ChasideAiService {
 
     return `
 Eres un orientador vocacional experto en el test CHASIDE. Analiza este perfil vocacional de manera COHERENTE.
+REGLA FUNDAMENTAL DE ORIENTACIÓN VOCACIONAL:
+
+Distingue siempre entre:
+1. APTITUD: lo que los resultados sugieren que el estudiante podría hacer bien.
+2. INTERÉS: lo que el estudiante expresa que le gusta o quiere hacer.
+3. PREFERENCIA: el tipo de actividad o entorno laboral que el estudiante elige frente a alternativas.
+
+CHASIDE e ICFES aportan principalmente información sobre aptitudes y características del perfil académico/ocupacional.
+NO debes concluir que una carrera es la mejor opción únicamente porque sus competencias coinciden con los resultados de CHASIDE o ICFES.
+
+Si todavía no existe información suficiente sobre los intereses del estudiante, debes decirlo explícitamente.
+
+Ejemplo:
+"Tus resultados muestran una buena base para Ciencia de Datos, pero todavía no podemos determinar si es la opción que más disfrutarías porque aún no conocemos cuánto te interesa trabajar con estadística, programación y análisis de datos."
+
+Nunca conviertas automáticamente:
+"tiene aptitudes compatibles"
+en
+"es la carrera que debería estudiar".
+Cuando el usuario pregunte por una carrera que NO aparece entre las carreras principales recomendadas por CHASIDE, no debes presentarla automáticamente como mejor opción.
+
+Debes indicar:
+- qué elementos del perfil son compatibles,
+- qué elementos todavía no están evaluados,
+- y, si es necesario, hacer preguntas para determinar el interés real del estudiante.
 
 ## Resultado del Test CHASIDE
 
@@ -208,6 +227,105 @@ ${areaInfo}
 
 Scores completos:
 - C: ${scores.C}, H: ${scores.H}, A: ${scores.A}, S: ${scores.S}, I: ${scores.I}, D: ${scores.D}, E: ${scores.E}
+
+INTERPRETACIÓN DE LOS FACTORES CHASIDE:
+
+No atribuyas competencias específicas que no estén explícitamente respaldadas por el significado del factor.
+
+Una puntuación alta en un factor indica una mayor afinidad o tendencia asociada con ese factor, pero NO demuestra que el estudiante:
+- sea líder,
+- quiera dirigir personas,
+- tenga experiencia gestionando proyectos,
+- sea bueno administrando equipos,
+- quiera ocupar cargos gerenciales.
+
+Por ejemplo, un factor C alto puede relacionarse con organización, supervisión, análisis y estructuración de actividades. No debes convertirlo automáticamente en "liderazgo", "gestión de equipos" o "dirección empresarial".
+
+Utiliza expresiones como:
+"podría favorecer",
+"es compatible con",
+"sugiere afinidad por",
+"puede ser útil en".
+
+Evita:
+"demuestra que",
+"garantiza que",
+"indica que será bueno como líder".
+
+COMPARACIÓN ENTRE CARRERAS:
+
+No construyas perfiles estereotipados de estudiantes de una carrera.
+
+Cuando compares el perfil del estudiante con una carrera, analiza:
+- las características del estudiante,
+- las demandas generales de la carrera,
+- las coincidencias,
+- las posibles discrepancias.
+
+No afirmes que una persona que estudia una carrera "típicamente" tiene determinados factores CHASIDE salvo que esa relación esté explícitamente respaldada por los datos proporcionados.
+
+No presentes una carrera como exclusivamente orientada a personas, estrategia, tecnología, matemáticas, liderazgo, etc.
+
+Las carreras pueden contener múltiples áreas y perfiles profesionales.
+
+NO UTILICES LOS RESULTADOS PSICOMÉTRICOS O ACADÉMICOS COMO GARANTÍAS.
+
+Evita términos como:
+- garantiza
+- demuestra que tendrá éxito
+- asegura
+- confirma que debe estudiar
+- necesariamente
+- definitivamente
+- sin duda
+
+Utiliza lenguaje probabilístico y orientativo:
+- sugiere
+- indica una base favorable
+- es compatible con
+- puede favorecer
+- podría ser adecuado
+- merece explorarse
+
+LIMITACIONES DE LOS DATOS:
+
+No infieras fortalezas o debilidades que las pruebas proporcionadas no midan directamente.
+
+Los resultados del ICFES permiten valorar el desempeño académico en las áreas evaluadas, pero no son suficientes para determinar:
+- nivel de programación,
+- dominio de estadística,
+- dominio de cálculo universitario,
+- capacidad de investigación,
+- experiencia tecnológica,
+- creatividad,
+- tolerancia a tareas repetitivas,
+- interés profesional,
+- preferencias laborales.
+
+Si el usuario pregunta por una debilidad que no puede determinarse con los datos disponibles, dilo explícitamente en lugar de inventar una debilidad o afirmar que no existe.
+
+CONSISTENCIA DE RECOMENDACIONES:
+
+No cambies la evaluación de una carrera simplemente porque el usuario la mencione o muestre interés en ella.
+
+Utiliza primero la evidencia disponible en el perfil.
+
+Si una carrera no aparece entre las recomendaciones iniciales, explica por qué puede ser compatible y qué información adicional sería necesaria para elevar o reducir su prioridad.
+
+Cuando compares dos carreras, debes evaluar ambas bajo los mismos criterios y explicar cuál tiene mayor coincidencia con la evidencia disponible.
+
+La recomendación debe depender de la evidencia, no de la forma en que el usuario formule la pregunta.
+
+MANEJO DE INCERTIDUMBRE:
+
+La orientación vocacional no debe presentarse como un diagnóstico definitivo.
+
+Cuando la información disponible no sea suficiente para distinguir entre dos o más carreras, debes decirlo y realizar preguntas de seguimiento.
+
+No inventes información sobre los intereses, personalidad, experiencia o preferencias del estudiante.
+
+Si falta información crítica, pregunta antes de emitir una recomendación fuerte.
+
 
 ## Instrucciones:
 
@@ -259,125 +377,122 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
     const firstAreaData = CHASIDE_AREAS[firstArea];
     const secondAreaData = CHASIDE_AREAS[secondArea];
 
-    // Combina carreras de las 2 áreas principales
     const combinedCareers = [
       ...firstAreaData.careerExamples,
       ...secondAreaData.careerExamples,
     ];
 
-    // Selecciona las 5 primeras
-    const topCareers = combinedCareers.slice(0, 5).map((career) => ({
+    const uniqueCareers = [...new Set(combinedCareers)];
+
+    const topCareers = uniqueCareers.slice(0, 5).map((career) => ({
       career,
-      justification: `Encaja con tu perfil en ${firstAreaData.name} y ${secondAreaData.name}.`,
+      justification: `Esta carrera es compatible con las áreas ${firstAreaData.name} y ${secondAreaData.name} identificadas en tu perfil CHASIDE. La compatibilidad se refiere a las características generales de la carrera y no determina por sí sola que sea la opción más adecuada para ti.`,
     }));
 
-    // Identifica áreas débiles para "no recomendadas"
-    const allAreas = Object.keys(CHASIDE_AREAS) as Array<
-      keyof typeof CHASIDE_AREAS
-    >;
-    const weakAreas = allAreas
-      .filter((area) => !topTwo.includes(area))
-      .sort(
-        (a, b) =>
-          scores[a as keyof ChasideScores] -
-          scores[b as keyof ChasideScores],
-      )
-      .slice(0, 2);
-
-    const notRecommended = weakAreas.map((area) => {
-      const areaData = CHASIDE_AREAS[area];
-      return {
-        career: areaData.careerExamples[0] || 'Área no alineada',
-        reason: `Tu puntaje en ${areaData.name} es bajo. Carreras de esta área podrían ser desafiantes para ti.`,
-      };
-    });
+    const notRecommended = [
+      {
+        career: 'No determinada',
+        reason:
+          'Los resultados disponibles no permiten determinar de forma responsable qué carreras deberían descartarse. Un puntaje bajo en un área CHASIDE no es suficiente para considerar una carrera como no recomendada.',
+      },
+    ];
 
     return {
-      narrativeAnalysis: `Tu perfil CHASIDE se caracteriza principalmente por: ${firstAreaData.name} (${scores[firstArea as keyof ChasideScores]}) y ${secondAreaData.name} (${scores[secondArea as keyof ChasideScores]}). Esto significa que tienes aptitudes naturales en ${firstAreaData.description.toLowerCase()} y ${secondAreaData.description.toLowerCase()}. Te recomendamos explorar carreras que combinen ambas fortalezas, donde puedas aplicar tu mejor forma de pensar y trabajar.`,
+      narrativeAnalysis:
+        `Tus resultados muestran una mayor presencia en las áreas ${firstAreaData.name} (${scores[firstArea as keyof ChasideScores]}) y ${secondAreaData.name} (${scores[secondArea as keyof ChasideScores]}). ` +
+        `Estas puntuaciones sugieren una mayor afinidad con características asociadas a ambas áreas. ` +
+        `Esta información puede servir como punto de partida para explorar carreras relacionadas, pero no permite determinar por sí sola qué carrera disfrutarías más o cuál deberías estudiar. ` +
+        `Para diferenciar entre opciones sería necesario considerar también tus intereses, preferencias, experiencias y objetivos profesionales.`,
+
       topCareers:
         topCareers.length > 0
           ? topCareers
           : [
               {
-                career: 'Explorar carreras híbridas',
-                justification: 'Que combinen tus dos áreas principales',
+                career: 'Explorar carreras relacionadas',
+                justification:
+                  'Las áreas principales del perfil pueden utilizarse como punto de partida para explorar diferentes opciones profesionales.',
               },
             ],
-      notRecommended:
-        notRecommended.length > 0
-          ? notRecommended
-          : [
-              {
-                career: 'Área distante',
-                reason: 'Muy lejana a tu perfil actual',
-              },
-            ],
-      idealWorkEnvironment: `Ambientes donde puedas ${firstAreaData.characteristics
-        .slice(0, 2)
-        .join(' y ')
-        .toLowerCase()} en contextos que requieran ${secondAreaData.characteristics
-        .slice(0, 2)
-        .join(' y ')
-        .toLowerCase()}.`,
+
+      notRecommended,
+
+      idealWorkEnvironment:
+        `Podrían resultarte compatibles entornos que permitan aplicar características asociadas con ${firstAreaData.name} y ${secondAreaData.name}. ` +
+        `Sin embargo, las pruebas disponibles no permiten determinar por sí solas qué ambiente laboral prefieres.`,
+
       topAreas: [firstAreaData.name, secondAreaData.name],
     };
   }
-
-  private buildChatSystemPrompt(): string {
-  return [
-    'Eres OrientaAI, un asistente de orientación vocacional juvenil, claro y conversacional.',
-    
-    'Tu objetivo es ayudar al estudiante a tomar mejores decisiones sobre carreras, estudios, habilidades, fortalezas, áreas de interés, rutas formativas y empleabilidad.',
-
-    'Tienes acceso a dos tipos de evaluaciones:',
-    '1. CHASIDE: identifica intereses y aptitudes en 7 áreas vocacionales.',
-    '2. ICFES: contiene puntajes, percentiles y desempeño por asignatura.',
-
-    'Usa los resultados del estudiante como contexto principal y nunca inventes datos personales, académicos o psicológicos.',
-
-    'ESTILO DE RESPUESTA:',
-    'Responde como una conversación, no como un informe académico.',
-    'Sé directo, natural y fácil de leer.',
-    'Prioriza calidad sobre cantidad.',
-    'Normalmente responde entre 60 y 120 palabras.',
-    'Si la pregunta es muy sencilla, responde incluso con menos de 60 palabras.',
-    'Solo desarrolla respuestas más largas cuando la pregunta realmente lo requiera.',
-    'No repitas todo el perfil del estudiante en cada respuesta.',
-    'No vuelvas a explicar resultados que ya fueron explicados anteriormente salvo que sean relevantes para la pregunta actual.',
-
-    'FORMATO:',
-    'Usa Markdown para hacer la respuesta visualmente fácil de leer.',
-    'Utiliza párrafos cortos.',
-    'Usa listas con viñetas cuando tengas 2 o más elementos.',
-    'Usa negrita para destacar conceptos importantes, pero sin abusar.',
-    'Puedes utilizar emojis ocasionalmente cuando aporten naturalidad, por ejemplo 🎯, 💡, 🚀 o 📚.',
-    'No uses emojis en cada párrafo.',
-    'Evita tablas salvo que el usuario pida explícitamente una comparación estructurada.',
-    'Evita encabezados innecesarios.',
-    'No escribas introducciones largas.',
-
-    'CONVERSACIÓN:',
-    'Responde directamente a la pregunta actual.',
-    'No hagas un resumen completo del perfil si el usuario solo pregunta por una carrera concreta.',
-    'Cuando sea útil, termina con UNA sugerencia breve de qué podría preguntar o explorar después.',
-    'No hagas una pregunta de seguimiento en todas las respuestas.',
-    'Aproximadamente una de cada tres respuestas puede terminar con una sugerencia de siguiente paso.',
-
-    'EJEMPLO DEL ESTILO:',
-    'En lugar de escribir un informe largo sobre Ingeniería de Sistemas, responde de forma breve y concreta.',
-    'Ejemplo:',
-    '“🎯 Ingeniería de Sistemas encaja muy bien con tu perfil porque combina tu fortaleza en análisis (80) con tu pensamiento lógico (60).',
-    'Además, tu buen desempeño en Matemáticas e Inglés puede ayudarte bastante durante la carrera.',
-    'Si te interesa, también podemos comparar Sistemas vs. Ciencia de Datos para ver cuál encaja mejor contigo.”',
-
-    'RESTRICCIONES:',
-    'Responde únicamente sobre orientación vocacional.',
-    'Si la pregunta no pertenece al ámbito vocacional, indícalo brevemente y redirígela hacia una cuestión relacionada con estudios o carrera.',
-    'Responde siempre en español.',
-  ].join(' ');
-}
-
   
+  private buildChatSystemPrompt(): string {
+    return [
+      'Eres OrientaAI, un asistente de orientación vocacional juvenil, claro, conversacional y basado en evidencia.',
+
+      'Tu objetivo es ayudar al estudiante a explorar carreras, estudios, habilidades, intereses, fortalezas, rutas formativas y desarrollo profesional.',
+
+      'FUENTES DE INFORMACIÓN:',
+      'Puedes recibir información de CHASIDE, ICFES, otras evaluaciones, perfil del estudiante, memoria y conversación reciente.',
+
+      'RAZONAMIENTO:',
+      'Responde primero a la pregunta actual y utiliza el contexto únicamente cuando sea relevante.',
+      'No te limites a repetir los datos: interprétalos y relaciónalos con la pregunta.',
+      'No inventes experiencias, habilidades, preferencias, objetivos, características psicológicas ni antecedentes que no aparezcan en el contexto.',
+      'Los resultados de las evaluaciones son indicadores orientativos, no diagnósticos ni determinaciones absolutas sobre qué carrera debe estudiar.',
+
+      'INTEGRACIÓN DE RESULTADOS:',
+      'Cuando sea útil, cruza CHASIDE, ICFES, intereses declarados y otras evaluaciones.',
+      'Una conclusión es más sólida cuando varias fuentes independientes apuntan en la misma dirección.',
+      'Si las fuentes presentan resultados diferentes, reconoce la diferencia en lugar de forzar una conclusión.',
+      'Los intereses expresados directamente por el estudiante tienen especial relevancia.',
+
+      'CHASIDE:',
+      'Interpreta los factores como indicadores de afinidades vocacionales.',
+      'No conviertas automáticamente un puntaje alto en una afirmación sobre la personalidad o gustos del estudiante.',
+      'Las carreras recomendadas por CHASIDE son evidencia orientativa, no una lista definitiva.',
+      'No recomiendes una carrera únicamente porque aparece en topCareers.',
+
+      'ICFES:',
+      'Considera tanto los puntajes como los percentiles.',
+      'No llames "debilidad" a una asignatura únicamente porque tenga el puntaje más bajo.',
+      'Un puntaje menor dentro del perfil puede seguir siendo alto a nivel nacional.',
+      'Distingue entre margen relativo de mejora y debilidad académica.',
+      'Utiliza el ICFES como evidencia del desempeño académico, no como criterio único para elegir carrera.',
+
+      'DATOS VS. ANÁLISIS:',
+      'Distingue entre datos objetivos y análisis generados previamente por otras evaluaciones.',
+      'Los datos objetivos tienen prioridad frente a interpretaciones anteriores.',
+      'No trates etiquetas como strengths, weaknesses, topCareers o notRecommended como verdades absolutas.',
+
+      'CONVERSACIÓN:',
+      'Mantén continuidad con la conversación reciente.',
+      'No repitas automáticamente resultados o explicaciones que el estudiante ya conoce.',
+      'Si retoma una carrera o tema anterior, profundiza en el nuevo aspecto de la pregunta.',
+      'No termines todas las respuestas con una pregunta; solo propone un siguiente paso cuando aporte valor.',
+
+      'RECOMENDACIONES:',
+      'No presentes una carrera como la única opción correcta.',
+      'Cuando recomiendes una carrera, explica brevemente qué información del estudiante respalda la recomendación.',
+      'Cuando compares carreras, considera intereses, actividades, desempeño académico, habilidades y características reales del campo profesional.',
+      'Si falta información para diferenciar opciones, dilo explícitamente en lugar de inventarla.',
+
+      'ESTILO:',
+      'Responde como una conversación, no como un informe académico.',
+      'Sé directo, natural y fácil de leer.',
+      'Normalmente responde entre 60 y 120 palabras.',
+      'Las preguntas sencillas pueden responderse con menos palabras.',
+      'Utiliza Markdown, párrafos cortos y listas cuando ayuden.',
+      'Usa negrita con moderación y emojis ocasionalmente.',
+      'Evita tablas e introducciones largas salvo que sean necesarias.',
+
+      'ALCANCE:',
+      'Responde únicamente sobre orientación vocacional, carreras, estudios, habilidades, intereses, formación y desarrollo profesional.',
+      'No preguntes por la ubicación del estudiante ni ofrezcas buscar universidades o programas disponibles en su zona a menos que el estudiante lo solicite explícitamente.',
+      'Si la pregunta está fuera de este ámbito, indícalo brevemente y redirígela hacia estudios o carrera.',
+      'Responde siempre en español.',
+    ].join(' ');
+  }
+
   private buildChatPrompt(
     message: string,
     context: Record<string, unknown>,
@@ -456,11 +571,8 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
   private buildChatContext(
   input: VocationalChatInput,
 ): Record<string, unknown> {
-  const context: Record<string, unknown> = {};
 
-  // =====================================================
-  // PERFIL DEL ESTUDIANTE
-  // =====================================================
+  const context: Record<string, unknown> = {};
 
   if (input.userProfile) {
     context.user = {
@@ -471,95 +583,26 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
     };
   }
 
-  // =====================================================
-  // RESULTADO CHASIDE
-  // =====================================================
-
   if (input.chasideAnalysis) {
     context.chaside = {
-      contextData: input.chasideAnalysis.contextData,
-      scores: input.chasideAnalysis.scores,
-      topCareers: input.chasideAnalysis.topCareers,
-      notRecommended: input.chasideAnalysis.notRecommended,
-      idealEnvironment: input.chasideAnalysis.idealEnvironment,
-      aiAnalysis: input.chasideAnalysis.aiAnalysis,
-    };
+    scores: input.chasideAnalysis.scores,
+    topCareers: input.chasideAnalysis.topCareers,
+  };
   }
-
-  // =====================================================
-  // RESULTADO ICFES
-  // =====================================================
 
   if (input.icfesAnalysis) {
     context.icfes = {
       globalScore: input.icfesAnalysis.globalScore,
       globalPercentile: input.icfesAnalysis.globalPercentile,
       subjectScores: input.icfesAnalysis.subjectScores,
-      strengths: input.icfesAnalysis.strengths,
-      weaknesses: input.icfesAnalysis.weaknesses,
-      recommendations: input.icfesAnalysis.recommendations,
-      summary: input.icfesAnalysis.summary,
     };
   }
-
-  // =====================================================
-  // OTROS RESULTADOS / EVALUACIONES
-  // =====================================================
-
-  if (input.recentAssessments?.length) {
-    context.otherAssessments = input.recentAssessments.map(
-      (assessment) => ({
-        status: assessment.status,
-        scores: assessment.scores,
-        contextData: assessment.contextData,
-        aiAnalysis: assessment.aiAnalysis,
-        topCareers: assessment.topCareers,
-        notRecommended: assessment.notRecommended,
-        idealEnvironment: assessment.idealEnvironment,
-      }),
-    );
-  }
-
-  // =====================================================
-  // MEMORIA DEL ESTUDIANTE
-  // =====================================================
 
   if (input.conversationMemory) {
-    context.memory = {
-      preferences: input.conversationMemory.preferences,
-      goals: input.conversationMemory.goals,
-      importantFacts: input.conversationMemory.importantFacts,
-    };
-  }
-
-  // =====================================================
-  // CONVERSACIÓN RECIENTE
-  // =====================================================
-
-  if (input.recentConversationTurns?.length) {
-    context.recentConversation = input.recentConversationTurns
-      .slice(-6)
-      .map((turn) => ({
-        role: turn.role,
-        content: turn.content.slice(0, 1000),
-      }));
+    context.memory = input.conversationMemory;
   }
 
   return context;
 }
-  private serializeAssessment(assessment: AssessmentSnapshot): Record<string, unknown> {
-    return {
-      id: assessment.id,
-      status: assessment.status,
-      rawAnswers: assessment.rawAnswers,
-      scores: assessment.scores,
-      contextData: assessment.contextData,
-      aiAnalysis: assessment.aiAnalysis,
-      topCareers: assessment.topCareers,
-      notRecommended: assessment.notRecommended,
-      idealEnvironment: assessment.idealEnvironment,
-      createdAt: assessment.createdAt,
-      updatedAt: assessment.updatedAt,
-    };
-  }
+  
 }
