@@ -207,9 +207,13 @@ export class ChasideService {
     } else {
       answer = await this.aiService.answerVocationalChat({
         message: dto.message,
-        currentAssessment: context.currentAssessment ?? undefined,
+
+        chasideAnalysis: context.currentAssessment ?? undefined,
+
         recentAssessments: context.recentAssessments,
+
         icfesAnalysis: context.latestIcfesAnalysis,
+
         recentConversationTurns: recentConversationTurns as any,
       });
     }
