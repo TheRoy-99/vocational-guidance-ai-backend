@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateAssessmentDto } from './create-assessment.dto';
-import { IsObject, IsOptional, IsEnum } from 'class-validator';
+import { IsArray, IsObject, IsOptional, IsEnum } from 'class-validator';
 import { Prisma } from '@prisma/client';
 
 enum AssessmentStatus {
@@ -17,6 +17,14 @@ export class UpdateAssessmentDto extends PartialType(CreateAssessmentDto) {
 
   @IsOptional()
   aiAnalysis?: string;
+
+  @IsOptional()
+  @IsObject()
+  vocationalProfile?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  vocationalResults?: unknown[];
 
   @IsOptional()
   @IsEnum(AssessmentStatus)

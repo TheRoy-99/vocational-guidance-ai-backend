@@ -42,7 +42,7 @@ export class ChasideService {
 
   async submit(userId: string, dto: SubmitAssessmentDto) {
     // Guarda y procesa de inmediato para que el usuario vea recomendaciones sin depender de Redis.
-    const assessment = await this.prisma.chasideAssessment.create({
+    const assessment = await this.prisma.vocationalAssessment.create({
       data: {
         userId,
         rawAnswers: dto.answers as any,
@@ -55,7 +55,7 @@ export class ChasideService {
       return { assessmentId: assessment.id, status: 'PROCESSED' };
     } catch (e: any) {
       this.logger.error('Error procesando CHASIDE de forma inmediata', e?.message ?? e);
-      await this.prisma.chasideAssessment.update({
+      await this.prisma.vocationalAssessment.update({
         where: { id: assessment.id },
         data: { status: 'FAILED' },
       });
@@ -64,7 +64,7 @@ export class ChasideService {
   }
 
   async processAssessment(assessmentId: string) {
-    const assessment = await this.prisma.chasideAssessment.findUnique({
+    const assessment = await this.prisma.vocationalAssessment.findUnique({
       where: { id: assessmentId },
     });
 
@@ -76,7 +76,7 @@ export class ChasideService {
       return assessment;
     }
 
-    await this.prisma.chasideAssessment.update({
+    await this.prisma.vocationalAssessment.update({
       where: { id: assessmentId },
       data: { status: 'PROCESSING' },
     });
@@ -84,7 +84,7 @@ export class ChasideService {
     const { scores, contextData } = this.scoringService.process(assessment.rawAnswers as any);
     const aiResult = await this.aiService.analyze(scores, contextData);
 
-    return this.prisma.chasideAssessment.update({
+    return this.prisma.vocationalAssessment.update({
       where: { id: assessmentId },
       data: {
         scores: scores as any,
@@ -99,7 +99,7 @@ export class ChasideService {
   }
 
   async getResults(assessmentId: string, userId: string) {
-    const assessment = await this.prisma.chasideAssessment.findFirst({
+    const assessment = await this.prisma.vocationalAssessment.findFirst({
       where: { id: assessmentId, userId }, // userId para que no vea resultados ajenos
     });
 
@@ -115,7 +115,7 @@ export class ChasideService {
   }
 
   async getMyAssessments(userId: string) {
-    const assessments = await this.prisma.chasideAssessment.findMany({
+    const assessments = await this.prisma.vocationalAssessment.findMany({
       where: { userId },
       select: {
         id: true,
@@ -139,7 +139,7 @@ export class ChasideService {
       await this.processAssessment(assessment.id);
     }
 
-    const refreshedAssessments = await this.prisma.chasideAssessment.findMany({
+    const refreshedAssessments = await this.prisma.vocationalAssessment.findMany({
       where: { userId },
       select: {
         id: true,
@@ -326,7 +326,7 @@ export class ChasideService {
   }
 
   private async getRecentAssessments(userId: string) {
-    return this.prisma.chasideAssessment.findMany({
+    return this.prisma.vocationalAssessment.findMany({
       where: { userId },
       select: {
         id: true,

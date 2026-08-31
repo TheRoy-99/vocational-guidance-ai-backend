@@ -1,6 +1,6 @@
 // Decisión arquitectónica: Definimos dos modelos en esta fase.
 // User: entidad central del sistema.
-// ChasideAssessment: representa una sesión de evaluación vocacional completa.
+// VocationalAssessment: representa una sesión de evaluación vocacional completa.
 // La separación en tabla propia (en vez de columnas en User) sigue SRP:
 // un usuario puede tener múltiples evaluaciones en el futuro.
 
@@ -23,14 +23,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assessments    ChasideAssessment[]
+  assessments    VocationalAssessment[]
   icfesAnalyses   IcfesAnalysis[]
   chatConversations ChatConversation[]
 
   @@map("users")
 }
 
-model ChasideAssessment {
+model VocationalAssessment {
   id        String           @id @default(uuid())
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -44,6 +44,17 @@ model ChasideAssessment {
   // Contexto adicional procesado: { location: [...], interest: [...], activity: [...] }
   contextData Json?
 
+  // Resultado del motor vocacional adaptativo basado en áreas A1-A12.
+  vocationalProfile Json?
+  vocationalResults Json?
+  assessmentType String @default("LEGACY")
+  engineVersion String?
+  questionnaireVersion String?
+  scoringVersion String?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  currentPhase String?
+
   // Respuesta estructurada de Claude
   aiAnalysis        String?
   topCareers        Json?
@@ -54,7 +65,62 @@ model ChasideAssessment {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
-  @@map("chaside_assessments")
+  answers       AssessmentAnswer[]
+  phaseEvents   AssessmentPhaseEvent[]
+  areaResults   AssessmentAreaResult[]
+
+  @@map("vocational_assessments")
+}
+
+model AssessmentAnswer {
+  id            String @id @default(uuid())
+  assessmentId  String
+  assessment    VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId    String
+  phase         String
+  answerValue   Json
+  position      Int
+  answeredAt    DateTime @default(now())
+  questionText  String?
+  questionType  String?
+  options       Json?
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId, phase])
+  @@index([questionId])
+  @@map("assessment_answers")
+}
+
+model AssessmentPhaseEvent {
+  id           String @id @default(uuid())
+  assessmentId String
+  assessment   VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  eventId      String @unique
+  phase        String
+  eventType    String
+  questionId   String?
+  timestamp    DateTime @default(now())
+  metadata     Json?
+
+  @@index([assessmentId, timestamp])
+  @@index([assessmentId, phase, eventType])
+  @@map("assessment_phase_events")
+}
+
+model AssessmentAreaResult {
+  id           String @id @default(uuid())
+  assessmentId String
+  assessment   VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  areaId       String
+  score        Float
+  confidence   Float
+  rank         Int
+  percentage   Float?
+  dimensions   Json?
+
+  @@unique([assessmentId, areaId])
+  @@index([areaId, rank])
+  @@map("assessment_area_results")
 }
 
 model IcfesAnalysis {
@@ -132,6 +198,9 @@ enum AssessmentStatus {
   PROCESSING
   PROCESSED
   FAILED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
 }
 
 enum IcfesAnalysisStatus {

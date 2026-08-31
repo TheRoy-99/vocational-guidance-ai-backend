@@ -6,9 +6,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateAssessmentDto } from './dto/create-assessment.dto';
+import { CreateAssessmentAnswerDto, CreateAssessmentEventDto, CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
-import { Prisma, ChasideAssessment } from '@prisma/client';
+import { Prisma, VocationalAssessment } from '@prisma/client';
 import { analyzeAnswers } from './utils/career-engine';
 
 @Injectable()
@@ -20,21 +20,31 @@ export class AssessmentsService {
   async create(
     userId: string,
     dto: CreateAssessmentDto,
-  ): Promise<ChasideAssessment> {
+  ): Promise<VocationalAssessment> {
     try {
-      // Procesar respuestas con el motor de recomendaciones
       const rawAnswers = dto.rawAnswers as Record<string, unknown>;
-      const analysisResult = analyzeAnswers(rawAnswers);
+      const isVocationalAreas = dto.assessmentType === 'VOCATIONAL_AREAS';
+      const analysisResult = isVocationalAreas
+        ? { topCareers: [], compatibility: [], strengths: [], analysis: 'Resultado generado por el motor vocacional adaptativo.' }
+        : analyzeAnswers(rawAnswers);
       const rawAnswersJson = rawAnswers as Prisma.InputJsonValue;
-      const scoresJson = JSON.parse(JSON.stringify(analysisResult.topCareers)) as Prisma.InputJsonValue;
+      const scoresJson = JSON.parse(JSON.stringify(dto.vocationalResults ?? [])) as Prisma.InputJsonValue;
 
-      return await this.prisma.chasideAssessment.create({
+      return await this.prisma.vocationalAssessment.create({
         data: {
           userId,
           rawAnswers: rawAnswersJson,
           scores: scoresJson, // Guardar top careers como scores
-          aiAnalysis: JSON.stringify(analysisResult), // Guardar análisis completo
-          status: 'PROCESSED',
+          aiAnalysis: isVocationalAreas ? null : JSON.stringify(analysisResult),
+          vocationalProfile: dto.vocationalProfile as Prisma.InputJsonValue | undefined,
+          vocationalResults: dto.vocationalResults as Prisma.InputJsonValue | undefined,
+          assessmentType: dto.assessmentType ?? 'LEGACY',
+          engineVersion: dto.engineVersion,
+          questionnaireVersion: dto.questionnaireVersion,
+          scoringVersion: dto.scoringVersion,
+          currentPhase: dto.currentPhase,
+          status: isVocationalAreas && !dto.vocationalResults ? 'IN_PROGRESS' : isVocationalAreas ? 'COMPLETED' : 'PROCESSED',
+          completedAt: isVocationalAreas && dto.vocationalResults ? new Date() : undefined,
         },
       });
     } catch (error: any) {
@@ -51,15 +61,82 @@ export class AssessmentsService {
     }
   }
 
-  async findAll(userId: string): Promise<ChasideAssessment[]> {
-    return this.prisma.chasideAssessment.findMany({
+  async addAnswer(id: string, userId: string, dto: CreateAssessmentAnswerDto) {
+    await this.findById(id, userId);
+    return this.prisma.assessmentAnswer.upsert({
+      where: { assessmentId_questionId: { assessmentId: id, questionId: dto.questionId } },
+      create: {
+        id: dto.id,
+        assessmentId: id,
+        questionId: dto.questionId,
+        phase: dto.phase,
+        answerValue: dto.answerValue as Prisma.InputJsonValue,
+        position: dto.position,
+        questionText: dto.questionText,
+        questionType: dto.questionType,
+        options: dto.options as Prisma.InputJsonValue | undefined,
+      },
+      update: {
+        phase: dto.phase,
+        answerValue: dto.answerValue as Prisma.InputJsonValue,
+        position: dto.position,
+        questionText: dto.questionText,
+        questionType: dto.questionType,
+        options: dto.options as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
+
+  async addEvent(id: string, userId: string, dto: CreateAssessmentEventDto) {
+    await this.findById(id, userId);
+    return this.prisma.assessmentPhaseEvent.upsert({
+      where: { eventId: dto.eventId },
+      create: { id: dto.id, eventId: dto.eventId, assessmentId: id, phase: dto.phase, eventType: dto.eventType, questionId: dto.questionId, metadata: dto.metadata as Prisma.InputJsonValue | undefined },
+      update: { phase: dto.phase, eventType: dto.eventType, questionId: dto.questionId, metadata: dto.metadata as Prisma.InputJsonValue | undefined },
+    });
+  }
+
+  async finalize(id: string, userId: string, dto: CreateAssessmentDto) {
+    await this.findById(id, userId);
+    if (!dto.vocationalProfile || !dto.vocationalResults) throw new InternalServerErrorException('Faltan snapshots vocacionales');
+    const vocationalResults = dto.vocationalResults;
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.vocationalAssessment.update({
+        where: { id },
+        data: {
+          rawAnswers: dto.rawAnswers as Prisma.InputJsonValue,
+          vocationalProfile: dto.vocationalProfile as Prisma.InputJsonValue,
+          vocationalResults: vocationalResults as Prisma.InputJsonValue,
+          scores: vocationalResults as Prisma.InputJsonValue,
+          assessmentType: 'VOCATIONAL_AREAS',
+          engineVersion: dto.engineVersion,
+          questionnaireVersion: dto.questionnaireVersion,
+          scoringVersion: dto.scoringVersion,
+          currentPhase: dto.currentPhase,
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        },
+      });
+      await tx.assessmentAreaResult.deleteMany({ where: { assessmentId: id } });
+      await tx.assessmentAreaResult.createMany({
+        data: vocationalResults.map((result: any, index: number) => ({
+          assessmentId: id, areaId: result.area, score: result.score, confidence: result.confidence, rank: index + 1,
+          percentage: result.percentage ?? null, dimensions: result.dimensions as Prisma.InputJsonValue | undefined,
+        })),
+      });
+      return updated;
+    });
+  }
+
+  async findAll(userId: string): Promise<VocationalAssessment[]> {
+    return this.prisma.vocationalAssessment.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findById(id: string, userId: string): Promise<ChasideAssessment> {
-    const assessment = await this.prisma.chasideAssessment.findUnique({
+  async findById(id: string, userId: string): Promise<VocationalAssessment> {
+    const assessment = await this.prisma.vocationalAssessment.findUnique({
       where: { id },
     });
 
@@ -79,12 +156,12 @@ export class AssessmentsService {
     id: string,
     userId: string,
     dto: UpdateAssessmentDto,
-  ): Promise<ChasideAssessment> {
+  ): Promise<VocationalAssessment> {
     // Verificar que el assessment existe y pertenece al usuario
     const assessment = await this.findById(id, userId);
 
     try {
-      const data: Prisma.ChasideAssessmentUpdateInput = {
+      const data: Prisma.VocationalAssessmentUpdateInput = {
         ...(dto.rawAnswers !== undefined
           ? { rawAnswers: dto.rawAnswers as Prisma.InputJsonValue }
           : {}),
@@ -92,10 +169,12 @@ export class AssessmentsService {
           ? { scores: dto.scores as Prisma.InputJsonValue }
           : {}),
         ...(dto.aiAnalysis !== undefined ? { aiAnalysis: dto.aiAnalysis } : {}),
+        ...(dto.vocationalProfile !== undefined ? { vocationalProfile: dto.vocationalProfile as Prisma.InputJsonValue } : {}),
+        ...(dto.vocationalResults !== undefined ? { vocationalResults: dto.vocationalResults as Prisma.InputJsonValue } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       };
 
-      return await this.prisma.chasideAssessment.update({
+      return await this.prisma.vocationalAssessment.update({
         where: { id },
         data,
       });
@@ -111,7 +190,7 @@ export class AssessmentsService {
     await this.findById(id, userId);
 
     try {
-      await this.prisma.chasideAssessment.delete({
+      await this.prisma.vocationalAssessment.delete({
         where: { id },
       });
     } catch (error: any) {
