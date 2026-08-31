@@ -127,13 +127,10 @@ export class ChasideService {
       this.prisma.chasideAssessmentScore.createMany({
         data: orderedScores.map(([category, rawScore], rank) => ({ assessmentId, category, rawScore, rank: rank + 1 })),
       }),
+      // Las recomendaciones de carrera no forman parte de la puntuación CHASIDE.
+      // Se conservan los campos legacy para compatibilidad, pero no se crean
+      // registros normalizados que puedan confundirse con una conclusión formal.
       this.prisma.chasideAssessmentRecommendation.deleteMany({ where: { assessmentId } }),
-      this.prisma.chasideAssessmentRecommendation.createMany({
-        data: [
-          ...aiResult.topCareers.map((item, rank) => ({ assessmentId, recommendationType: 'RECOMMENDED', career: item.career, rank: rank + 1, reason: item.justification, source: 'AI' })),
-          ...aiResult.notRecommended.map((item, rank) => ({ assessmentId, recommendationType: 'NOT_RECOMMENDED', career: item.career, rank: rank + 1, reason: item.reason, source: 'AI' })),
-        ],
-      }),
     ]);
     return updated;
   }

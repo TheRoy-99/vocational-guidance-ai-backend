@@ -27,6 +27,7 @@ model User {
   chasideAssessments ChasideAssessment[]
   icfesAnalyses   IcfesAnalysis[]
   chatConversations ChatConversation[]
+  feedbackAssessments AssessmentFeedback[]
 
   @@map("users")
 }
@@ -69,6 +70,7 @@ model VocationalAssessment {
   answers       AssessmentAnswer[]
   phaseEvents   AssessmentPhaseEvent[]
   areaResults   AssessmentAreaResult[]
+  feedbackAssessments AssessmentFeedback[]
 
   @@map("vocational_assessments")
 }
@@ -267,6 +269,79 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model AssessmentFeedback {
+  id                         String   @id @default(uuid())
+  userId                     String
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId               String?
+  assessment                 VocationalAssessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  feedbackContext            FeedbackContext
+  evaluatorType              FeedbackEvaluatorType
+  questionnaireVersion       String
+  status                     FeedbackStatus @default(DRAFT)
+  startedAt                  DateTime @default(now())
+  completedAt                DateTime?
+  questionCountShown         Int      @default(0)
+  lastQuestionReached        Int      @default(0)
+  completed                  Boolean  @default(false)
+  clarityGain                Int?
+  perceivedUtility           Int?
+  selfPerceivedAlignment     Int?
+  discoveryEffect            String?
+  recommendationRelevance   Int?
+  adaptiveLogicPerception    Int?
+  questionRelevance          String?
+  actionIntent               String?
+  preTestClarity             Int?
+  studentOutcome             String?
+  studentPerceivedBenefits   Json?
+  systemResultCoherence      Int?
+  adaptiveMethodologyPerception Int?
+  educationalPotential       String?
+  vocationalGuidanceConfidence Int?
+  openFeedback               String?
+  disagreementReason         String?
+  idempotencyKey             String  @unique
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  responses                  AssessmentFeedbackResponse[]
+  events                     AssessmentFeedbackEvent[]
+
+  @@index([userId, createdAt])
+  @@index([assessmentId])
+  @@index([evaluatorType, questionnaireVersion])
+  @@map("assessment_feedback")
+}
+
+model AssessmentFeedbackResponse {
+  id           String @id @default(uuid())
+  feedbackId   String
+  feedback     AssessmentFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  questionId   String
+  responseType String
+  responseValue Json?
+  responseText String?
+  position     Int
+  createdAt    DateTime @default(now())
+
+  @@unique([feedbackId, questionId])
+  @@index([questionId, responseType])
+  @@map("assessment_feedback_responses")
+}
+
+model AssessmentFeedbackEvent {
+  id         String @id @default(uuid())
+  feedbackId String
+  feedback   AssessmentFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  eventType  String
+  position   Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([feedbackId, eventType])
+  @@map("assessment_feedback_events")
+}
+
 enum Role {
   STUDENT
   COUNSELOR
@@ -286,4 +361,24 @@ enum AssessmentStatus {
 enum IcfesAnalysisStatus {
   PROCESSED
   FAILED
+}
+
+enum FeedbackEvaluatorType {
+  STUDENT_USER
+  EVALUATOR
+}
+
+enum FeedbackStatus {
+  DRAFT
+  SUBMITTING
+  COMPLETED
+  ABANDONED
+  DISMISSED
+}
+
+enum FeedbackContext {
+  ADAPTIVE_ASSESSMENT
+  ICFES
+  CHASIDE
+  PLATFORM_GENERAL
 }
