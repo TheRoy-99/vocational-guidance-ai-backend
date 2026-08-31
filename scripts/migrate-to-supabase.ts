@@ -55,7 +55,7 @@ async function migrateToSupabase() {
     // Paso 1: Exportar datos locales
     console.log('📤 Exportando datos de PostgreSQL local...');
     const users = await localPrisma.user.findMany();
-    const assessments = await localPrisma.vocationalAssessment.findMany();
+    const assessments = await localPrisma.chasideAssessment.findMany();
 
     const exportData = {
       timestamp: new Date().toISOString(),
@@ -111,13 +111,10 @@ async function migrateToSupabase() {
           topCareers,
           notRecommended,
           aiAnalysis,
-          vocationalProfile,
-          vocationalResults,
-          assessmentType,
           ...assessmentData
         } = assessment;
 
-        await supabasePrisma.vocationalAssessment.upsert({
+        await supabasePrisma.chasideAssessment.upsert({
           where: { id },
           update: {
             ...assessmentData,
@@ -127,9 +124,6 @@ async function migrateToSupabase() {
             topCareers: toNullableJsonValue(topCareers),
             notRecommended: toNullableJsonValue(notRecommended),
             aiAnalysis,
-            vocationalProfile: toNullableJsonValue(vocationalProfile),
-            vocationalResults: toNullableJsonValue(vocationalResults),
-            assessmentType,
           },
           create: {
             ...assessmentData,
@@ -139,9 +133,6 @@ async function migrateToSupabase() {
             topCareers: toNullableJsonValue(topCareers),
             notRecommended: toNullableJsonValue(notRecommended),
             aiAnalysis,
-            vocationalProfile: toNullableJsonValue(vocationalProfile),
-            vocationalResults: toNullableJsonValue(vocationalResults),
-            assessmentType,
           },
         });
         assessmentsInserted++;

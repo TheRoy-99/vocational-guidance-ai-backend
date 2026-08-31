@@ -24,6 +24,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   assessments    VocationalAssessment[]
+  chasideAssessments ChasideAssessment[]
   icfesAnalyses   IcfesAnalysis[]
   chatConversations ChatConversation[]
 
@@ -70,6 +71,85 @@ model VocationalAssessment {
   areaResults   AssessmentAreaResult[]
 
   @@map("vocational_assessments")
+}
+
+model ChasideAssessment {
+  id                 String @id @default(uuid())
+  userId             String
+  user               User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rawAnswers         Json
+  scores             Json?
+  contextData        Json?
+  aiAnalysis         String?
+  topCareers         Json?
+  notRecommended     Json?
+  idealEnvironment   String?
+  status             AssessmentStatus @default(PENDING)
+  instrumentVersion  String?
+  scoringVersion     String?
+  answerCount        Int @default(0)
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  answers            ChasideAssessmentAnswer[]
+  scoresByCategory   ChasideAssessmentScore[]
+  recommendations    ChasideAssessmentRecommendation[]
+
+  @@index([userId, createdAt])
+  @@map("chaside_assessments")
+}
+
+model ChasideAssessmentAnswer {
+  id                String @id @default(uuid())
+  assessmentId      String
+  assessment        ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId        Int
+  category          String
+  questionType      String
+  answerValue       Json
+  position          Int
+  answeredAt        DateTime @default(now())
+  questionVersion   String?
+  questionText      String?
+  options           Json?
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId, category])
+  @@index([questionId, category])
+  @@map("chaside_assessment_answers")
+}
+
+model ChasideAssessmentScore {
+  id                String @id @default(uuid())
+  assessmentId      String
+  assessment        ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  category          String
+  rawScore          Float
+  normalizedScore   Float?
+  rank              Int
+
+  @@unique([assessmentId, category])
+  @@index([category, rank])
+  @@map("chaside_assessment_scores")
+}
+
+model ChasideAssessmentRecommendation {
+  id                   String @id @default(uuid())
+  assessmentId         String
+  assessment           ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  recommendationType   String
+  career               String
+  rank                 Int
+  score                Float?
+  reason               String?
+  source               String?
+
+  @@unique([assessmentId, recommendationType, rank])
+  @@index([career])
+  @@index([recommendationType, source])
+  @@map("chaside_assessment_recommendations")
 }
 
 model AssessmentAnswer {

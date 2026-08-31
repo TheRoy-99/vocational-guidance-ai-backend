@@ -6,6 +6,7 @@ import { VocationalChatDto } from '../dto/vocational-chat.dto';
 import { ChasideScoringService } from './chaside-scoring.service';
 import { ChasideAiService } from './chaside-ai.service';
 import { IcfesService } from '../../icfes/icfes.service';
+import { CHASIDE_QUESTIONS_FULL } from '../constants/chaside-questions';
 
 export const CHASIDE_QUEUE = 'chaside-analysis';
 const CHASIDE_CATEGORIES = new Set(['C', 'H', 'A', 'S', 'I', 'D', 'E', 'LOCATION', 'INTEREST', 'ACTIVITY', 'ACADEMIC']);
@@ -42,12 +43,34 @@ export class ChasideService {
 
   async submit(userId: string, dto: SubmitAssessmentDto) {
     // Guarda y procesa de inmediato para que el usuario vea recomendaciones sin depender de Redis.
-    const assessment = await this.prisma.vocationalAssessment.create({
-      data: {
-        userId,
-        rawAnswers: dto.answers as any,
-        status: 'PENDING',
-      },
+    const assessment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.chasideAssessment.create({
+        data: {
+          userId,
+          rawAnswers: dto.answers as any,
+          answerCount: dto.answers.length,
+          instrumentVersion: 'CHASIDE_CLASSIC_1.0',
+          scoringVersion: 'CHASIDE_SCORING_1.0',
+          startedAt: new Date(),
+          status: 'PENDING',
+        },
+      });
+      await tx.chasideAssessmentAnswer.createMany({
+        data: dto.answers.map((answer, position) => {
+        const question = CHASIDE_QUESTIONS_FULL.find(item => item.id === answer.questionId);
+        return {
+          assessmentId: created.id,
+          questionId: answer.questionId,
+          category: answer.category,
+          questionType: answer.type,
+          answerValue: answer.value as any,
+          position: position + 1,
+          questionVersion: 'CHASIDE_CLASSIC_1.0',
+          questionText: question?.text,
+        };
+        }),
+      });
+      return created;
     });
 
     try {
@@ -55,7 +78,7 @@ export class ChasideService {
       return { assessmentId: assessment.id, status: 'PROCESSED' };
     } catch (e: any) {
       this.logger.error('Error procesando CHASIDE de forma inmediata', e?.message ?? e);
-      await this.prisma.vocationalAssessment.update({
+      await this.prisma.chasideAssessment.update({
         where: { id: assessment.id },
         data: { status: 'FAILED' },
       });
@@ -64,7 +87,7 @@ export class ChasideService {
   }
 
   async processAssessment(assessmentId: string) {
-    const assessment = await this.prisma.vocationalAssessment.findUnique({
+    const assessment = await this.prisma.chasideAssessment.findUnique({
       where: { id: assessmentId },
     });
 
@@ -76,7 +99,7 @@ export class ChasideService {
       return assessment;
     }
 
-    await this.prisma.vocationalAssessment.update({
+    await this.prisma.chasideAssessment.update({
       where: { id: assessmentId },
       data: { status: 'PROCESSING' },
     });
@@ -84,7 +107,7 @@ export class ChasideService {
     const { scores, contextData } = this.scoringService.process(assessment.rawAnswers as any);
     const aiResult = await this.aiService.analyze(scores, contextData);
 
-    return this.prisma.vocationalAssessment.update({
+    const updated = await this.prisma.chasideAssessment.update({
       where: { id: assessmentId },
       data: {
         scores: scores as any,
@@ -94,12 +117,29 @@ export class ChasideService {
         notRecommended: aiResult.notRecommended as any,
         idealEnvironment: aiResult.idealWorkEnvironment,
         status: 'PROCESSED',
+        completedAt: new Date(),
       },
     });
+
+    const orderedScores = Object.entries(scores).sort(([, left], [, right]) => right - left);
+    await this.prisma.$transaction([
+      this.prisma.chasideAssessmentScore.deleteMany({ where: { assessmentId } }),
+      this.prisma.chasideAssessmentScore.createMany({
+        data: orderedScores.map(([category, rawScore], rank) => ({ assessmentId, category, rawScore, rank: rank + 1 })),
+      }),
+      this.prisma.chasideAssessmentRecommendation.deleteMany({ where: { assessmentId } }),
+      this.prisma.chasideAssessmentRecommendation.createMany({
+        data: [
+          ...aiResult.topCareers.map((item, rank) => ({ assessmentId, recommendationType: 'RECOMMENDED', career: item.career, rank: rank + 1, reason: item.justification, source: 'AI' })),
+          ...aiResult.notRecommended.map((item, rank) => ({ assessmentId, recommendationType: 'NOT_RECOMMENDED', career: item.career, rank: rank + 1, reason: item.reason, source: 'AI' })),
+        ],
+      }),
+    ]);
+    return updated;
   }
 
   async getResults(assessmentId: string, userId: string) {
-    const assessment = await this.prisma.vocationalAssessment.findFirst({
+    const assessment = await this.prisma.chasideAssessment.findFirst({
       where: { id: assessmentId, userId }, // userId para que no vea resultados ajenos
     });
 
@@ -115,7 +155,7 @@ export class ChasideService {
   }
 
   async getMyAssessments(userId: string) {
-    const assessments = await this.prisma.vocationalAssessment.findMany({
+    const assessments = await this.prisma.chasideAssessment.findMany({
       where: { userId },
       select: {
         id: true,
@@ -139,7 +179,7 @@ export class ChasideService {
       await this.processAssessment(assessment.id);
     }
 
-    const refreshedAssessments = await this.prisma.vocationalAssessment.findMany({
+    const refreshedAssessments = await this.prisma.chasideAssessment.findMany({
       where: { userId },
       select: {
         id: true,
@@ -326,7 +366,7 @@ export class ChasideService {
   }
 
   private async getRecentAssessments(userId: string) {
-    return this.prisma.vocationalAssessment.findMany({
+    return this.prisma.chasideAssessment.findMany({
       where: { userId },
       select: {
         id: true,
