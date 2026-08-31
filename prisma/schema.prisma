@@ -1,6 +1,6 @@
 // Decisión arquitectónica: Definimos dos modelos en esta fase.
 // User: entidad central del sistema.
-// ChasideAssessment: representa una sesión de evaluación vocacional completa.
+// VocationalAssessment: representa una sesión de evaluación vocacional completa.
 // La separación en tabla propia (en vez de columnas en User) sigue SRP:
 // un usuario puede tener múltiples evaluaciones en el futuro.
 
@@ -23,14 +23,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assessments    ChasideAssessment[]
+  assessments    VocationalAssessment[]
+  chasideAssessments ChasideAssessment[]
   icfesAnalyses   IcfesAnalysis[]
   chatConversations ChatConversation[]
+  feedbackAssessments AssessmentFeedback[]
 
   @@map("users")
 }
 
-model ChasideAssessment {
+model VocationalAssessment {
   id        String           @id @default(uuid())
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -44,6 +46,17 @@ model ChasideAssessment {
   // Contexto adicional procesado: { location: [...], interest: [...], activity: [...] }
   contextData Json?
 
+  // Resultado del motor vocacional adaptativo basado en áreas A1-A12.
+  vocationalProfile Json?
+  vocationalResults Json?
+  assessmentType String @default("LEGACY")
+  engineVersion String?
+  questionnaireVersion String?
+  scoringVersion String?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  currentPhase String?
+
   // Respuesta estructurada de Claude
   aiAnalysis        String?
   topCareers        Json?
@@ -54,7 +67,142 @@ model ChasideAssessment {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
+  answers       AssessmentAnswer[]
+  phaseEvents   AssessmentPhaseEvent[]
+  areaResults   AssessmentAreaResult[]
+  feedbackAssessments AssessmentFeedback[]
+
+  @@map("vocational_assessments")
+}
+
+model ChasideAssessment {
+  id                 String @id @default(uuid())
+  userId             String
+  user               User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rawAnswers         Json
+  scores             Json?
+  contextData        Json?
+  aiAnalysis         String?
+  topCareers         Json?
+  notRecommended     Json?
+  idealEnvironment   String?
+  status             AssessmentStatus @default(PENDING)
+  instrumentVersion  String?
+  scoringVersion     String?
+  answerCount        Int @default(0)
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  answers            ChasideAssessmentAnswer[]
+  scoresByCategory   ChasideAssessmentScore[]
+  recommendations    ChasideAssessmentRecommendation[]
+
+  @@index([userId, createdAt])
   @@map("chaside_assessments")
+}
+
+model ChasideAssessmentAnswer {
+  id                String @id @default(uuid())
+  assessmentId      String
+  assessment        ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId        Int
+  category          String
+  questionType      String
+  answerValue       Json
+  position          Int
+  answeredAt        DateTime @default(now())
+  questionVersion   String?
+  questionText      String?
+  options           Json?
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId, category])
+  @@index([questionId, category])
+  @@map("chaside_assessment_answers")
+}
+
+model ChasideAssessmentScore {
+  id                String @id @default(uuid())
+  assessmentId      String
+  assessment        ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  category          String
+  rawScore          Float
+  normalizedScore   Float?
+  rank              Int
+
+  @@unique([assessmentId, category])
+  @@index([category, rank])
+  @@map("chaside_assessment_scores")
+}
+
+model ChasideAssessmentRecommendation {
+  id                   String @id @default(uuid())
+  assessmentId         String
+  assessment           ChasideAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  recommendationType   String
+  career               String
+  rank                 Int
+  score                Float?
+  reason               String?
+  source               String?
+
+  @@unique([assessmentId, recommendationType, rank])
+  @@index([career])
+  @@index([recommendationType, source])
+  @@map("chaside_assessment_recommendations")
+}
+
+model AssessmentAnswer {
+  id            String @id @default(uuid())
+  assessmentId  String
+  assessment    VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId    String
+  phase         String
+  answerValue   Json
+  position      Int
+  answeredAt    DateTime @default(now())
+  questionText  String?
+  questionType  String?
+  options       Json?
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId, phase])
+  @@index([questionId])
+  @@map("assessment_answers")
+}
+
+model AssessmentPhaseEvent {
+  id           String @id @default(uuid())
+  assessmentId String
+  assessment   VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  eventId      String @unique
+  phase        String
+  eventType    String
+  questionId   String?
+  timestamp    DateTime @default(now())
+  metadata     Json?
+
+  @@index([assessmentId, timestamp])
+  @@index([assessmentId, phase, eventType])
+  @@map("assessment_phase_events")
+}
+
+model AssessmentAreaResult {
+  id           String @id @default(uuid())
+  assessmentId String
+  assessment   VocationalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  areaId       String
+  score        Float
+  confidence   Float
+  rank         Int
+  percentage   Float?
+  dimensions   Json?
+
+  @@unique([assessmentId, areaId])
+  @@index([areaId, rank])
+  @@map("assessment_area_results")
 }
 
 model IcfesAnalysis {
@@ -121,6 +269,79 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model AssessmentFeedback {
+  id                         String   @id @default(uuid())
+  userId                     String
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId               String?
+  assessment                 VocationalAssessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  feedbackContext            FeedbackContext
+  evaluatorType              FeedbackEvaluatorType
+  questionnaireVersion       String
+  status                     FeedbackStatus @default(DRAFT)
+  startedAt                  DateTime @default(now())
+  completedAt                DateTime?
+  questionCountShown         Int      @default(0)
+  lastQuestionReached        Int      @default(0)
+  completed                  Boolean  @default(false)
+  clarityGain                Int?
+  perceivedUtility           Int?
+  selfPerceivedAlignment     Int?
+  discoveryEffect            String?
+  recommendationRelevance   Int?
+  adaptiveLogicPerception    Int?
+  questionRelevance          String?
+  actionIntent               String?
+  preTestClarity             Int?
+  studentOutcome             String?
+  studentPerceivedBenefits   Json?
+  systemResultCoherence      Int?
+  adaptiveMethodologyPerception Int?
+  educationalPotential       String?
+  vocationalGuidanceConfidence Int?
+  openFeedback               String?
+  disagreementReason         String?
+  idempotencyKey             String  @unique
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  responses                  AssessmentFeedbackResponse[]
+  events                     AssessmentFeedbackEvent[]
+
+  @@index([userId, createdAt])
+  @@index([assessmentId])
+  @@index([evaluatorType, questionnaireVersion])
+  @@map("assessment_feedback")
+}
+
+model AssessmentFeedbackResponse {
+  id           String @id @default(uuid())
+  feedbackId   String
+  feedback     AssessmentFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  questionId   String
+  responseType String
+  responseValue Json?
+  responseText String?
+  position     Int
+  createdAt    DateTime @default(now())
+
+  @@unique([feedbackId, questionId])
+  @@index([questionId, responseType])
+  @@map("assessment_feedback_responses")
+}
+
+model AssessmentFeedbackEvent {
+  id         String @id @default(uuid())
+  feedbackId String
+  feedback   AssessmentFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  eventType  String
+  position   Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([feedbackId, eventType])
+  @@map("assessment_feedback_events")
+}
+
 enum Role {
   STUDENT
   COUNSELOR
@@ -132,9 +353,32 @@ enum AssessmentStatus {
   PROCESSING
   PROCESSED
   FAILED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
 }
 
 enum IcfesAnalysisStatus {
   PROCESSED
   FAILED
+}
+
+enum FeedbackEvaluatorType {
+  STUDENT_USER
+  EVALUATOR
+}
+
+enum FeedbackStatus {
+  DRAFT
+  SUBMITTING
+  COMPLETED
+  ABANDONED
+  DISMISSED
+}
+
+enum FeedbackContext {
+  ADAPTIVE_ASSESSMENT
+  ICFES
+  CHASIDE
+  PLATFORM_GENERAL
 }

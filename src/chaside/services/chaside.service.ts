@@ -6,6 +6,7 @@ import { VocationalChatDto } from '../dto/vocational-chat.dto';
 import { ChasideScoringService } from './chaside-scoring.service';
 import { ChasideAiService } from './chaside-ai.service';
 import { IcfesService } from '../../icfes/icfes.service';
+import { CHASIDE_QUESTIONS_FULL } from '../constants/chaside-questions';
 
 export const CHASIDE_QUEUE = 'chaside-analysis';
 const CHASIDE_CATEGORIES = new Set(['C', 'H', 'A', 'S', 'I', 'D', 'E', 'LOCATION', 'INTEREST', 'ACTIVITY', 'ACADEMIC']);
@@ -42,12 +43,34 @@ export class ChasideService {
 
   async submit(userId: string, dto: SubmitAssessmentDto) {
     // Guarda y procesa de inmediato para que el usuario vea recomendaciones sin depender de Redis.
-    const assessment = await this.prisma.chasideAssessment.create({
-      data: {
-        userId,
-        rawAnswers: dto.answers as any,
-        status: 'PENDING',
-      },
+    const assessment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.chasideAssessment.create({
+        data: {
+          userId,
+          rawAnswers: dto.answers as any,
+          answerCount: dto.answers.length,
+          instrumentVersion: 'CHASIDE_CLASSIC_1.0',
+          scoringVersion: 'CHASIDE_SCORING_1.0',
+          startedAt: new Date(),
+          status: 'PENDING',
+        },
+      });
+      await tx.chasideAssessmentAnswer.createMany({
+        data: dto.answers.map((answer, position) => {
+        const question = CHASIDE_QUESTIONS_FULL.find(item => item.id === answer.questionId);
+        return {
+          assessmentId: created.id,
+          questionId: answer.questionId,
+          category: answer.category,
+          questionType: answer.type,
+          answerValue: answer.value as any,
+          position: position + 1,
+          questionVersion: 'CHASIDE_CLASSIC_1.0',
+          questionText: question?.text,
+        };
+        }),
+      });
+      return created;
     });
 
     try {
@@ -84,7 +107,7 @@ export class ChasideService {
     const { scores, contextData } = this.scoringService.process(assessment.rawAnswers as any);
     const aiResult = await this.aiService.analyze(scores, contextData);
 
-    return this.prisma.chasideAssessment.update({
+    const updated = await this.prisma.chasideAssessment.update({
       where: { id: assessmentId },
       data: {
         scores: scores as any,
@@ -94,8 +117,22 @@ export class ChasideService {
         notRecommended: aiResult.notRecommended as any,
         idealEnvironment: aiResult.idealWorkEnvironment,
         status: 'PROCESSED',
+        completedAt: new Date(),
       },
     });
+
+    const orderedScores = Object.entries(scores).sort(([, left], [, right]) => right - left);
+    await this.prisma.$transaction([
+      this.prisma.chasideAssessmentScore.deleteMany({ where: { assessmentId } }),
+      this.prisma.chasideAssessmentScore.createMany({
+        data: orderedScores.map(([category, rawScore], rank) => ({ assessmentId, category, rawScore, rank: rank + 1 })),
+      }),
+      // Las recomendaciones de carrera no forman parte de la puntuación CHASIDE.
+      // Se conservan los campos legacy para compatibilidad, pero no se crean
+      // registros normalizados que puedan confundirse con una conclusión formal.
+      this.prisma.chasideAssessmentRecommendation.deleteMany({ where: { assessmentId } }),
+    ]);
+    return updated;
   }
 
   async getResults(assessmentId: string, userId: string) {
@@ -174,7 +211,6 @@ export class ChasideService {
     }
 
     const conversation: any = await this.resolveConversation(userId, context.contextSignature, dto.conversationId);
-    const recentConversationTurns = this.extractRecentConversationTurns(conversation.messages);
     const cachedTurn = await this.findSimilarCachedTurn(userId, context.contextSignature, dto.message);
 
     const turnKey = randomUUID();
@@ -207,10 +243,24 @@ export class ChasideService {
     } else {
       answer = await this.aiService.answerVocationalChat({
         message: dto.message,
-        currentAssessment: context.currentAssessment ?? undefined,
-        recentAssessments: context.recentAssessments,
-        icfesAnalysis: context.latestIcfesAnalysis,
-        recentConversationTurns: recentConversationTurns as any,
+
+        chasideAnalysis: context.currentAssessment ?? undefined,
+
+        icfesAnalysis: context.latestIcfesAnalysis
+          ? {
+              globalScore: context.latestIcfesAnalysis.globalScore,
+              globalPercentile: context.latestIcfesAnalysis.globalPercentile,
+              subjectScores: Array.isArray(context.latestIcfesAnalysis.subjectScores)
+                ? context.latestIcfesAnalysis.subjectScores as Array<{
+                    subject: string;
+                    score: number;
+                    percentile?: number | null;
+                  }>
+                : undefined,
+            }
+          : undefined,
+
+        
       });
     }
 

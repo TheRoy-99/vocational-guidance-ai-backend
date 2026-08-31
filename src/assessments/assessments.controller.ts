@@ -12,7 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AssessmentsService } from './assessments.service';
-import { CreateAssessmentDto } from './dto/create-assessment.dto';
+import { CreateAssessmentAnswerDto, CreateAssessmentEventDto, CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -30,6 +30,33 @@ export class AssessmentsController {
   @Get('me')
   async findMyAssessments(@Request() req: any) {
     return this.assessmentsService.findAll(req.user.id);
+  }
+
+  @Post(':id/answers')
+  async addAnswer(@Param('id') id: string, @Body() dto: CreateAssessmentAnswerDto, @Request() req: any) {
+    return this.assessmentsService.addAnswer(id, req.user.id, dto);
+  }
+
+  @Post(':id/events')
+  async addEvent(@Param('id') id: string, @Body() dto: CreateAssessmentEventDto, @Request() req: any) {
+    return this.assessmentsService.addEvent(id, req.user.id, dto);
+  }
+
+  @Post(':id/finalize')
+  async finalize(@Param('id') id: string, @Body() dto: CreateAssessmentDto, @Request() req: any) {
+    return this.assessmentsService.finalize(id, req.user.id, dto);
+  }
+
+  @Get(':id/results')
+  async getVocationalResults(@Param('id') id: string, @Request() req: any) {
+    const assessment = await this.assessmentsService.findById(id, req.user.id);
+    return {
+      assessmentId: assessment.id,
+      createdAt: assessment.createdAt,
+      assessmentType: assessment.assessmentType,
+      profile: assessment.vocationalProfile,
+      results: assessment.vocationalResults,
+    };
   }
 
   @Get(':id')
