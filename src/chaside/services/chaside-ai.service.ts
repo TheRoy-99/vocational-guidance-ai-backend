@@ -35,6 +35,17 @@ type IcfesAnalysisSnapshot = {
   }>;
 };
 
+type AdaptiveAssessmentSnapshot = {
+  id: string;
+  status: string;
+  currentPhase?: string | null;
+  engineVersion?: string | null;
+  questionnaireVersion?: string | null;
+  scoringVersion?: string | null;
+  profile?: unknown;
+  results?: unknown;
+};
+
 type UserProfileContext = {
   name?: string | null;
   educationLevel?: string | null;
@@ -59,6 +70,8 @@ type VocationalChatInput = {
   chasideAnalysis?: AssessmentSnapshot | null;
 
   icfesAnalysis?: IcfesAnalysisSnapshot | null;
+
+  adaptiveAssessment?: AdaptiveAssessmentSnapshot | null;
 
   conversationMemory?: ConversationMemory | null;
 };
@@ -459,6 +472,12 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
       'Distingue entre margen relativo de mejora y debilidad académica.',
       'Utiliza el ICFES como evidencia del desempeño académico, no como criterio único para elegir carrera.',
 
+      'EVALUACIÓN VOCACIONAL ADAPTATIVA:',
+      'Utiliza sus áreas, puntuaciones, confianza y dimensiones como evidencia central del perfil vocacional.',
+      'Una puntuación alta representa una afinidad relativa dentro de esta evaluación, no una probabilidad ni una garantía de éxito.',
+      'Considera la confianza y la fase del motor para distinguir entre una señal clara y una dirección que todavía debe explorarse.',
+      'No inventes el significado de una dimensión ni conviertas automáticamente una puntuación en una habilidad profesional.',
+
       'DATOS VS. ANÁLISIS:',
       'Distingue entre datos objetivos y análisis generados previamente por otras evaluaciones.',
       'Los datos objetivos tienen prioridad frente a interpretaciones anteriores.',
@@ -595,6 +614,19 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
       globalScore: input.icfesAnalysis.globalScore,
       globalPercentile: input.icfesAnalysis.globalPercentile,
       subjectScores: input.icfesAnalysis.subjectScores,
+    };
+  }
+
+  if (input.adaptiveAssessment) {
+    context.adaptiveAssessment = {
+      assessmentId: input.adaptiveAssessment.id,
+      status: input.adaptiveAssessment.status,
+      currentPhase: input.adaptiveAssessment.currentPhase,
+      engineVersion: input.adaptiveAssessment.engineVersion,
+      questionnaireVersion: input.adaptiveAssessment.questionnaireVersion,
+      scoringVersion: input.adaptiveAssessment.scoringVersion,
+      profile: input.adaptiveAssessment.profile,
+      results: input.adaptiveAssessment.results,
     };
   }
 

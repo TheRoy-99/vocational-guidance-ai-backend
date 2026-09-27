@@ -284,6 +284,7 @@ model AssessmentFeedback {
   questionCountShown         Int      @default(0)
   lastQuestionReached        Int      @default(0)
   completed                  Boolean  @default(false)
+  respondentProfile         String?
   clarityGain                Int?
   perceivedUtility           Int?
   selfPerceivedAlignment     Int?
