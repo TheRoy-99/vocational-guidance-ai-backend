@@ -171,6 +171,7 @@ export class AssessmentsService {
         ...(dto.aiAnalysis !== undefined ? { aiAnalysis: dto.aiAnalysis } : {}),
         ...(dto.vocationalProfile !== undefined ? { vocationalProfile: dto.vocationalProfile as Prisma.InputJsonValue } : {}),
         ...(dto.vocationalResults !== undefined ? { vocationalResults: dto.vocationalResults as Prisma.InputJsonValue } : {}),
+        ...(dto.currentPhase !== undefined ? { currentPhase: dto.currentPhase } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       };
 

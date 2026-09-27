@@ -200,10 +200,14 @@ export class ChasideService {
 
     const context = await this.buildChatContext(userId, dto.assessmentId);
 
-    if (!context.currentAssessment && !context.latestIcfesAnalysis) {
+    if (
+      !context.currentAssessment &&
+      !context.latestIcfesAnalysis &&
+      !context.latestAdaptiveAssessment
+    ) {
       return {
         answer:
-          'Aún no tengo resultados vocacionales tuyos para usar como contexto. Completa primero tu evaluación CHASIDE o sube tu PDF de ICFES para que pueda darte orientación personalizada basada en tus datos.',
+          'Aún no tengo resultados vocacionales tuyos para usar como contexto. Completa primero tu evaluación adaptativa o CHASIDE, o sube tu PDF de ICFES para que pueda darte orientación personalizada basada en tus datos.',
         assessmentId: null,
         conversationId: null,
         status: 'NO_CONTEXT',
@@ -257,6 +261,21 @@ export class ChasideService {
                     percentile?: number | null;
                   }>
                 : undefined,
+            }
+          : undefined,
+
+        adaptiveAssessment: context.latestAdaptiveAssessment
+          ? {
+              id: context.latestAdaptiveAssessment.id,
+              status: context.latestAdaptiveAssessment.status,
+              currentPhase: context.latestAdaptiveAssessment.currentPhase,
+              engineVersion: context.latestAdaptiveAssessment.engineVersion,
+              questionnaireVersion: context.latestAdaptiveAssessment.questionnaireVersion,
+              scoringVersion: context.latestAdaptiveAssessment.scoringVersion,
+              profile: this.summarizeAdaptiveProfile(
+                context.latestAdaptiveAssessment.vocationalProfile,
+              ),
+              results: context.latestAdaptiveAssessment.vocationalResults,
             }
           : undefined,
 
@@ -353,12 +372,39 @@ export class ChasideService {
       : refreshedAssessments[0] ?? null;
 
     const latestIcfesAnalysis = await this.icfesService.findLatest(userId);
+    const latestAdaptiveAssessment = await this.prisma.vocationalAssessment.findFirst({
+      where: {
+        userId,
+        assessmentType: 'VOCATIONAL_AREAS',
+        status: 'COMPLETED',
+      },
+      orderBy: [
+        { completedAt: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      select: {
+        id: true,
+        status: true,
+        currentPhase: true,
+        engineVersion: true,
+        questionnaireVersion: true,
+        scoringVersion: true,
+        vocationalProfile: true,
+        vocationalResults: true,
+        updatedAt: true,
+      },
+    });
 
     return {
       currentAssessment: refreshedCurrentAssessment,
       recentAssessments: refreshedAssessments,
       latestIcfesAnalysis,
-      contextSignature: this.buildContextSignature(refreshedCurrentAssessment, latestIcfesAnalysis),
+      latestAdaptiveAssessment,
+      contextSignature: this.buildContextSignature(
+        refreshedCurrentAssessment,
+        latestIcfesAnalysis,
+        latestAdaptiveAssessment,
+      ),
     };
   }
 
@@ -386,10 +432,37 @@ export class ChasideService {
   private buildContextSignature(
     assessment: { id: string; updatedAt: Date | string } | null,
     icfesAnalysis: { id: string; updatedAt: Date | string } | null,
+    adaptiveAssessment: { id: string; updatedAt?: Date | string | null } | null,
   ): string {
     const assessmentPart = assessment ? `${assessment.id}:${new Date(assessment.updatedAt).toISOString()}` : 'no-assessment';
     const icfesPart = icfesAnalysis ? `${icfesAnalysis.id}:${new Date(icfesAnalysis.updatedAt).toISOString()}` : 'no-icfes';
-    return `${assessmentPart}|${icfesPart}`;
+    const adaptivePart = adaptiveAssessment
+      ? `${adaptiveAssessment.id}:${adaptiveAssessment.updatedAt ? new Date(adaptiveAssessment.updatedAt).toISOString() : 'current'}`
+      : 'no-adaptive-assessment';
+    return `${assessmentPart}|${icfesPart}|${adaptivePart}`;
+  }
+
+  private summarizeAdaptiveProfile(profile: unknown): Record<string, unknown> | null {
+    if (!profile || typeof profile !== 'object') {
+      return null;
+    }
+
+    const source = profile as Record<string, unknown>;
+    const summary: Record<string, unknown> = {
+      phase: source.phase ?? null,
+      questionCount: source.questionCount ?? null,
+      confirmationReopenCount: source.confirmationReopenCount ?? null,
+    };
+
+    if (source.dimensions && typeof source.dimensions === 'object') {
+      summary.dimensions = source.dimensions;
+    }
+
+    if (Array.isArray(source.rankingHistory)) {
+      summary.recentRankingHistory = source.rankingHistory.slice(-3);
+    }
+
+    return summary;
   }
 
   private async resolveConversation(
