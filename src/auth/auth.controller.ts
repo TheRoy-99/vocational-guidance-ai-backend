@@ -1,10 +1,11 @@
 // REGLA INQUEBRANTABLE: el controlador SOLO recibe DTOs y delega.
 // Zero lógica de negocio aquí. Ni un if, ni un await bcrypt, nada.
 
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, Request, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -20,5 +21,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK) // Login exitoso = 200, no 201
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Request() req: any) {
+    return { user: req.user };
   }
 }

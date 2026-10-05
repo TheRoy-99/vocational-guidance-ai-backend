@@ -53,7 +53,9 @@ export class UsersService {
   // Incluye password — solo para uso interno de AuthService
   async findByEmail(email: string): Promise<User | null> {
     try {
-      return await this.prisma.user.findUnique({ where: { email } });
+      return await this.prisma.user.findFirst({
+        where: { email: { equals: email.trim(), mode: 'insensitive' } },
+      });
     } catch (error: any) {
       const databaseUnavailable = ['ETIMEDOUT', 'P1001', 'P1008', 'P2024'].includes(error?.code);
       if (databaseUnavailable) {
