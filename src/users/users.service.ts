@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, User } from '@prisma/client';
@@ -51,7 +52,17 @@ export class UsersService {
 
   // Incluye password — solo para uso interno de AuthService
   async findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    try {
+      return await this.prisma.user.findUnique({ where: { email } });
+    } catch (error: any) {
+      const databaseUnavailable = ['ETIMEDOUT', 'P1001', 'P1008', 'P2024'].includes(error?.code);
+      if (databaseUnavailable) {
+        throw new ServiceUnavailableException(
+          'No podemos conectarnos a la base de datos en este momento. Intenta nuevamente en unos segundos.',
+        );
+      }
+      throw error;
+    }
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<SafeUser> {
