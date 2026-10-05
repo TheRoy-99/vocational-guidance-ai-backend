@@ -53,7 +53,10 @@ export class ReportsService {
     const leaderScore = Number(topAreas[0]?.score ?? 0);
     const confidence = topAreas.length ? clamp(Number(topAreas[0].confidence ?? 0) * 100) : 0;
     const relative = topAreas.map((area) => leaderScore > 0 ? clamp(Number(area.score ?? 0) / leaderScore * 100) : 0);
-    const coverage = DIMENSIONS.filter((key) => Number(dimensions[key]?.score ?? dimensions[key] ?? 0) > 0).length;
+    const coverage = DIMENSIONS.filter((key) => {
+      const dimension = safeRecord(dimensions[key]);
+      return Number(dimension.evidenceCount ?? 0) > 0 || Number(dimension.score ?? dimensions[key] ?? 0) !== 0;
+    }).length;
     const coherence = clamp(Number(profile.rankingHistory?.length ? .82 : .65) * 100);
     const uncertainty = topAreas.length > 1 && leaderScore > 0 ? `${clamp(100 - (Number(topAreas[0].score) - Number(topAreas[1].score)) / leaderScore * 100)}%` : 'No calculable';
     const icfes = assessment.user.icfesAnalyses?.[0];
@@ -74,6 +77,7 @@ export class ReportsService {
       topAreas.forEach((area, index) => this.reportLine(doc, `Área ${index === 0 ? 'líder' : index === 1 ? 'secundaria' : 'terciaria'}`, `${area.name} · Puntaje ${Math.round(Number(area.score ?? 0))} · ${relative[index] ?? 0}% relativo`));
       this.reportParagraph(doc, summary);
       this.sectionTitle(doc, '3. Mapa multidimensional del perfil');
+      this.reportParagraph(doc, 'Escala comparativa: cada porcentaje indica cuánta evidencia acumuló una dimensión frente a la dimensión más representada del perfil, que equivale al 100%. No son partes de un total y, por eso, no tienen que sumar 100%.');
       this.dimensionBars(doc, dimensions);
       this.reportParagraph(doc, 'Las dimensiones muestran dónde se acumuló evidencia durante el recorrido. No representan una medida clínica ni sustituyen la entrevista profesional.');
       this.footer(doc, 1); doc.addPage();
@@ -147,7 +151,28 @@ export class ReportsService {
   }
   private infoGrid(doc: PDFDocument, items: string[][]) { items.forEach(([label, value], index) => { const x = index % 2 === 0 ? 42 : 300; const y = doc.y + Math.floor(index / 2) * 30; doc.fontSize(7).font('Helvetica-Bold').fillColor('#687277').text(label.toUpperCase(), x, y, { width: 220 }); doc.fontSize(9).font('Helvetica').fillColor(INK).text(String(value).slice(0, 44), x, y + 10, { width: 220, height: 16, ellipsis: true }); }); doc.y += Math.ceil(items.length / 2) * 30 + 4; }
   private topAreaCards(doc: PDFDocument, areas: JsonRecord[], relative: number[]) { const start = doc.y + 12; areas.forEach((area, index) => { const x = 42 + index * 170; doc.roundedRect(x, start, 155, 70, 7).fillAndStroke(index === 0 ? '#eef3ef' : PAPER, '#cbd3cf'); doc.fontSize(7).font('Helvetica-Bold').fillColor(PURPLE).text(`0${index + 1} · ${relative[index] ?? 0}%`, x + 10, start + 10, { width: 135 }); doc.fontSize(9).font('Helvetica-Bold').fillColor(INK).text(String(area.name), x + 10, start + 26, { width: 135, height: 25, ellipsis: true }); doc.fontSize(8).font('Helvetica').fillColor('#687277').text(`Puntaje ${Math.round(Number(area.score ?? 0))}`, x + 10, start + 54, { width: 135 }); }); doc.y = start + 83; }
-  private dimensionBars(doc: PDFDocument, dimensions: JsonRecord) { DIMENSIONS.forEach((label) => { const raw = dimensions[label]; const value = clamp(Number(raw?.score ?? raw?.value ?? raw ?? 0)); const y = doc.y + 15; doc.fontSize(8).font('Helvetica').fillColor(INK).text(label, 42, y, { width: 95 }); doc.roundedRect(145, y + 1, 330, 7, 3).fill('#e5e9e7'); doc.roundedRect(145, y + 1, 330 * value / 100, 7, 3).fill(GREEN); doc.fontSize(8).font('Helvetica').fillColor(INK).text(`${value}%`, 488, y, { width: 32, align: 'right' }); doc.y += 18; }); }
+  private dimensionBars(doc: PDFDocument, dimensions: JsonRecord) {
+    const states = DIMENSIONS.map((label) => {
+      const raw = dimensions[label];
+      const state = safeRecord(raw);
+      return { label, score: Number(state.score ?? state.value ?? (typeof raw === 'number' ? raw : 0)), evidenceCount: Number(state.evidenceCount ?? 0) };
+    });
+    const maxScore = Math.max(...states.map((state) => Math.max(state.score, 0)), 0);
+    const maxEvidence = Math.max(...states.map((state) => Math.max(state.evidenceCount, 0)), 0);
+    states.forEach(({ label, score, evidenceCount }) => {
+      const value = maxScore > 0
+        ? clamp((Math.max(score, 0) / maxScore) * 100)
+        : maxEvidence > 0
+          ? clamp((evidenceCount / maxEvidence) * 100)
+          : 0;
+      const y = doc.y + 15;
+      doc.fontSize(8).font('Helvetica').fillColor(INK).text(label, 42, y, { width: 95 });
+      doc.roundedRect(145, y + 1, 330, 7, 3).fill('#e5e9e7');
+      doc.roundedRect(145, y + 1, 330 * value / 100, 7, 3).fill(GREEN);
+      doc.fontSize(8).font('Helvetica').fillColor(INK).text(`${value}%`, 488, y, { width: 32, align: 'right' });
+      doc.y += 18;
+    });
+  }
   private metricRow(doc: PDFDocument, metrics: string[][]) { const y = doc.y + 10; metrics.forEach(([label, value], index) => { const x = 42 + index * 128; doc.roundedRect(x, y, 116, 43, 5).fillAndStroke('#f4f6f3', '#cbd3cf'); doc.fontSize(7).font('Helvetica-Bold').fillColor('#687277').text(label.toUpperCase(), x + 8, y + 9, { width: 100 }); doc.fontSize(11).font('Helvetica-Bold').fillColor(INK).text(value, x + 8, y + 23, { width: 100 }); }); doc.y = y + 58; }
   private sourceBlock(doc: PDFDocument, label: string, text: string) { const y = doc.y; doc.fontSize(9).font('Helvetica-Bold').fillColor(INK).text(label, 50, y, { width: 85 }); doc.fontSize(9).font('Helvetica').fillColor('#687277').text(text, 145, y, { width: 397 }); doc.y = Math.max(doc.y, y + 18); doc.moveDown(.5); }
   private interviewQuestions(areas: JsonRecord[], profile: JsonRecord) { const first = areas[0]?.name ?? 'tu primera dirección'; const second = areas[1]?.name ?? 'otra posibilidad'; const phase = profile.phase ?? 'el recorrido'; return [`¿Qué experiencia concreta te hizo acercarte a ${first}?`, `¿Qué diferencia notas entre ${first} y ${second} cuando imaginas una actividad real?`, `En la fase de ${phase}, ¿qué respuesta o situación te gustaría revisar con más calma?`]; }
