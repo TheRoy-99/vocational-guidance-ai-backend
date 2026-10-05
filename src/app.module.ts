@@ -8,6 +8,7 @@ import { AssessmentsModule } from './assessments/assessments.module';
 import { ChasideModule } from './chaside/chaside.module';
 import { IcfesModule } from './icfes/icfes.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     ChasideModule,
     IcfesModule,
     FeedbackModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
