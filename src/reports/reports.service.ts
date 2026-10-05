@@ -8,6 +8,7 @@ const GREEN = '#315e51';
 const PAPER = '#ffffff';
 const CREAM = '#f4f6f3';
 const AREA_NAMES: Record<string, string> = { A1: 'Tecnología y Computación', A2: 'Ciencia e Investigación', A3: 'Salud y Bienestar', A4: 'Psicología y Comportamiento', A5: 'Negocios y Emprendimiento', A6: 'Economía y Finanzas', A7: 'Comunicación y Marketing', A8: 'Diseño, Arte y Creatividad', A9: 'Educación y Desarrollo Humano', A10: 'Derecho, Sociedad y Humanidades', A11: 'Ingeniería, Construcción y Espacios', A12: 'Naturaleza y Medio Ambiente' };
+const CHASIDE_AREA_NAMES: Record<string, string> = { C: 'Administrativa', H: 'Humanidades y Ciencias Sociales', A: 'Artística', S: 'Ciencias de la Salud', I: 'Enseñanzas Técnicas', D: 'Defensa y Seguridad', E: 'Ciencias Experimentales' };
 const DIMENSIONS = ['Intereses', 'Habilidades', 'Pensamiento', 'Actividades', 'Entorno', 'Motivaciones', 'Valores'];
 
 type JsonRecord = Record<string, any>;
@@ -27,7 +28,7 @@ export class ReportsService {
     const assessment = await this.prisma.vocationalAssessment.findFirst({
       where: { id: assessmentId, userId, status: 'COMPLETED' },
       include: {
-        user: { include: { icfesAnalyses: { orderBy: { createdAt: 'desc' }, take: 1 }, chasideAssessments: { orderBy: { createdAt: 'desc' }, take: 1, include: { scoresByCategory: { orderBy: { rank: 'asc' } } } } } },
+        user: { include: { icfesAnalyses: { where: { status: 'PROCESSED' }, orderBy: { createdAt: 'desc' }, take: 1 }, chasideAssessments: { where: { status: 'PROCESSED' }, orderBy: { createdAt: 'desc' }, take: 1, include: { scoresByCategory: { orderBy: { rank: 'asc' } } } } } },
         answers: { orderBy: { position: 'asc' } },
         phaseEvents: { orderBy: { timestamp: 'asc' } },
         areaResults: { orderBy: { rank: 'asc' } },
@@ -61,6 +62,13 @@ export class ReportsService {
     const uncertainty = topAreas.length > 1 && leaderScore > 0 ? `${clamp(100 - (Number(topAreas[0].score) - Number(topAreas[1].score)) / leaderScore * 100)}%` : 'No calculable';
     const icfes = assessment.user.icfesAnalyses?.[0];
     const chaside = assessment.user.chasideAssessments?.[0];
+    const icfesSubjects = safeArray(icfes?.subjectScores).map((item) => safeRecord(item));
+    const icfesStrengths = safeArray(icfes?.strengths).map((item) => safeRecord(item));
+    const icfesWeaknesses = safeArray(icfes?.weaknesses).map((item) => safeRecord(item));
+    const chasideRows = safeArray(chaside?.scoresByCategory).length
+      ? safeArray(chaside?.scoresByCategory).map((item) => safeRecord(item))
+      : Object.entries(safeRecord(chaside?.scores)).map(([category, rawScore]) => ({ category, rawScore }));
+    const chasideTop = chasideRows.slice().sort((left, right) => Number(right.rawScore ?? right.normalizedScore ?? 0) - Number(left.rawScore ?? left.normalizedScore ?? 0));
     const duration = assessment.completedAt && assessment.startedAt ? this.durationLabel(new Date(assessment.completedAt).getTime() - new Date(assessment.startedAt).getTime()) : 'No disponible';
     const summary = topAreas.length ? `La evidencia reunida sugiere una afinidad principal con ${topAreas[0].name}${topAreas[1] ? `, acompañada por ${topAreas[1].name}` : ''}. Estas señales deben leerse como un punto de partida para conversar, contrastar experiencias y tomar decisiones informadas.` : 'La evaluación todavía no reúne suficientes señales para construir una síntesis completa.';
     const doc = new PDFDocument({ size: 'A4', margin: 42 });
@@ -88,8 +96,27 @@ export class ReportsService {
       this.sectionTitle(doc, '5. Trazabilidad del recorrido adaptativo');
       ['Perfil inicial', 'Exploración', 'Contraste', 'Confirmación', 'Descarte'].forEach((phase) => this.reportLine(doc, phase, `${phaseCounts.get(phase) ?? 0} preguntas respondidas`));
       this.sectionTitle(doc, '6. Triangulación de fuentes');
-      this.reportLine(doc, 'OrientaAI', topAreas.length ? `Área principal: ${topAreas[0].name}.` : 'Sin resultado disponible.'); this.reportLine(doc, 'ICFES', icfes ? `Puntaje global ${icfes.globalScore}/500${icfes.globalPercentile ? ` · Percentil ${icfes.globalPercentile}` : ''}.` : 'No disponible.'); this.reportLine(doc, 'CHASIDE', chaside ? 'Resultado complementario disponible.' : 'No disponible.');
-      this.reportParagraph(doc, icfes && topAreas.length ? `Convergencia para explorar: el perfil vocacional puede contrastarse con el desempeño académico registrado en ICFES durante la orientación.` : 'La triangulación queda parcial porque todavía no están disponibles todas las fuentes.');
+      this.reportLine(doc, 'OrientaAI', topAreas.length ? `Área principal: ${topAreas[0].name}.` : 'No reportó resultados vocacionales.');
+      if (icfes) {
+        this.reportLine(doc, 'ICFES · global', `${icfes.globalScore}/500${icfes.globalPercentile != null ? ` · Percentil ${icfes.globalPercentile}` : ''}`);
+        this.reportParagraph(doc, `ICFES · subpuntajes: ${icfesSubjects.map((item) => `${item.subject ?? 'Área'} ${item.score ?? '—'}/100${item.percentile != null ? ` (P${item.percentile})` : ''}`).join(' · ') || 'No reportados.'}`);
+        this.reportLine(doc, 'ICFES · fortalezas', icfesStrengths.slice(0, 2).map((item) => `${item.subject ?? 'Área'} (${item.score ?? '—'}/100)`).join(', ') || 'No identificadas.');
+        this.reportLine(doc, 'ICFES · áreas a potenciar', icfesWeaknesses.slice(0, 2).map((item) => `${item.subject ?? 'Área'} (${item.score ?? '—'}/100)`).join(', ') || 'No identificadas.');
+        this.reportParagraph(doc, `Lectura del informe ICFES: ${this.truncate(icfes.summary, 420)}`);
+      } else {
+        this.reportLine(doc, 'ICFES', 'El usuario no reportó resultados ICFES.');
+      }
+      if (chaside) {
+        this.reportParagraph(doc, `CHASIDE · puntajes por área: ${chasideRows.map((item) => `${CHASIDE_AREA_NAMES[String(item.category)] ?? item.category} ${Number(item.rawScore ?? item.normalizedScore ?? 0).toFixed(2)}`).join(' · ') || 'No reportados.'}`);
+        this.reportLine(doc, 'CHASIDE · fortalezas', chasideTop.slice(0, 3).map((item) => CHASIDE_AREA_NAMES[String(item.category)] ?? String(item.category)).join(', ') || 'No identificadas.');
+        this.reportLine(doc, 'CHASIDE · entorno', chaside.idealEnvironment || 'No reportado.');
+        const careers = safeArray(chaside.topCareers).map((item) => safeRecord(item).career).filter(Boolean).slice(0, 3).join(', ');
+        this.reportLine(doc, 'CHASIDE · posibilidades', careers || 'No reportadas.');
+        this.reportParagraph(doc, `Lectura del informe CHASIDE: ${this.truncate(chaside.aiAnalysis, 420)}`);
+      } else {
+        this.reportLine(doc, 'CHASIDE', 'El usuario no reportó resultados CHASIDE.');
+      }
+      this.reportParagraph(doc, 'Estas fuentes son complementarias: ICFES describe desempeño académico, CHASIDE aporta intereses y aptitudes generales, y OrientaAI explora preferencias vocacionales. La coincidencia o tensión entre ellas debe validarse en entrevista; ninguna fuente determina por sí sola una carrera.');
       this.footer(doc, 2); doc.addPage();
 
       this.header(doc, 'INFORME DIAGNÓSTICO CONFIDENCIAL', `Sesión ${assessment.id}`);
@@ -148,6 +175,10 @@ export class ReportsService {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes} min ${seconds} s`;
+  }
+  private truncate(value: unknown, maxLength: number) {
+    const text = String(value ?? 'No disponible').replace(/\s+/g, ' ').trim();
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1).trim()}…` : text;
   }
   private infoGrid(doc: PDFDocument, items: string[][]) { items.forEach(([label, value], index) => { const x = index % 2 === 0 ? 42 : 300; const y = doc.y + Math.floor(index / 2) * 30; doc.fontSize(7).font('Helvetica-Bold').fillColor('#687277').text(label.toUpperCase(), x, y, { width: 220 }); doc.fontSize(9).font('Helvetica').fillColor(INK).text(String(value).slice(0, 44), x, y + 10, { width: 220, height: 16, ellipsis: true }); }); doc.y += Math.ceil(items.length / 2) * 30 + 4; }
   private topAreaCards(doc: PDFDocument, areas: JsonRecord[], relative: number[]) { const start = doc.y + 12; areas.forEach((area, index) => { const x = 42 + index * 170; doc.roundedRect(x, start, 155, 70, 7).fillAndStroke(index === 0 ? '#eef3ef' : PAPER, '#cbd3cf'); doc.fontSize(7).font('Helvetica-Bold').fillColor(PURPLE).text(`0${index + 1} · ${relative[index] ?? 0}%`, x + 10, start + 10, { width: 135 }); doc.fontSize(9).font('Helvetica-Bold').fillColor(INK).text(String(area.name), x + 10, start + 26, { width: 135, height: 25, ellipsis: true }); doc.fontSize(8).font('Helvetica').fillColor('#687277').text(`Puntaje ${Math.round(Number(area.score ?? 0))}`, x + 10, start + 54, { width: 135 }); }); doc.y = start + 83; }
