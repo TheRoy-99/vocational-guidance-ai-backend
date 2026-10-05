@@ -1,9 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  // El perfil adaptativo contiene evidencia estructurada. El cliente lo envía
+  // compactado, pero mantenemos un margen explícito para evitar que el límite
+  // por defecto de Express provoque errores 413 en evaluaciones largas.
+  app.use(json({ limit: '2mb' }));
+  app.use(urlencoded({ extended: true, limit: '2mb' }));
 
   app.enableCors({
     origin: [
