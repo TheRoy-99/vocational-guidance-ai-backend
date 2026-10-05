@@ -25,8 +25,10 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    const email = dto.email.trim().toLowerCase();
+
     // 1. Verificar unicidad del email antes de hashear (fail fast)
-    const exists = await this.usersService.findByEmail(dto.email);
+    const exists = await this.usersService.findByEmail(email);
     if (exists) {
       throw new ConflictException('El email ya está registrado');
     }
@@ -37,6 +39,7 @@ export class AuthService {
     // 3. Crear usuario con contraseña hasheada
     const user = await this.usersService.create({
       ...dto,
+      email,
       password: hashedPassword,
     });
 
@@ -45,8 +48,10 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    const email = dto.email.trim().toLowerCase();
+
     // 1. Buscar usuario — mensaje genérico para no revelar si el email existe
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
