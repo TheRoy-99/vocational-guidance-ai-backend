@@ -1,7 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import { ChasideScores, ContextData } from './chaside-scoring.service';
 import { CHASIDE_AREAS } from '../constants/chaside-questions';
+
+// Gemini se consume mediante su endpoint compatible con OpenAI, reutilizando
+// la dependencia `openai` ya existente en lugar de añadir un SDK nuevo.
+const GEMINI_OPENAI_BASE_URL =
+  'https://generativelanguage.googleapis.com/v1beta/openai/';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_TIMEOUT_MS = 30_000;
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
+const GROQ_TIMEOUT_MS = 30_000;
+
+export const AI_RATE_LIMITED_MESSAGE =
+  'El servicio de IA está temporalmente limitado. Por favor, inténtalo nuevamente más tarde.';
+
+/** Groq (último proveedor) respondió HTTP 429: no se intenta ningún otro proveedor. */
+class AiRateLimitedError extends Error {}
+
+type CompletionRequest = {
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  maxTokens: number;
+  temperature?: number;
+};
+
+export type ChatTurn = { role: 'user' | 'assistant'; content: string };
+
+/** Origen de una respuesta del chat. Solo las de origen 'ai' se reutilizan como caché. */
+export type ChatAnswerSource = 'ai' | 'fallback' | 'rate_limited';
+
+export type ChatAnswer = { answer: string; source: ChatAnswerSource };
 
 type AssessmentSnapshot = {
   id: string;
@@ -74,6 +103,9 @@ type VocationalChatInput = {
   adaptiveAssessment?: AdaptiveAssessmentSnapshot | null;
 
   conversationMemory?: ConversationMemory | null;
+
+  /** Turnos anteriores de la conversación, del más antiguo al más reciente. */
+  recentTurns?: ChatTurn[];
 };
 
 export interface AiAnalysisResult {
@@ -86,104 +118,253 @@ export interface AiAnalysisResult {
 
 @Injectable()
 export class ChasideAiService {
-  private readonly client: Groq;
+  /** Cliente Groq: proveedor de fallback si Gemini falla. `null` si falta GROQ_API_KEY. */
+  private readonly groqClient: Groq | null;
+  private readonly groqModel: string;
+  /** Cliente Gemini: proveedor principal. `null` si falta GEMINI_API_KEY. */
+  private readonly geminiClient: OpenAI | null;
+  private readonly geminiModel: string;
   private readonly logger = new Logger(ChasideAiService.name);
 
   constructor() {
     this.logger.log(
       `GROQ_API_KEY configurada: ${!!process.env.GROQ_API_KEY}`,
     );
+    this.logger.log(
+      `GEMINI_API_KEY configurada: ${!!process.env.GEMINI_API_KEY}`,
+    );
 
-    this.client = new Groq({
-      apiKey: process.env.GROQ_API_KEY,
-    });
+    // maxRetries: 0 → los SDK reintentan por defecto; aquí un fallo debe pasar
+    // directamente al siguiente paso del fallback.
+    // El SDK de Groq lanza un error si no recibe key: sin este control, la falta
+    // de GROQ_API_KEY impediría arrancar todo el backend.
+    const groqApiKey = process.env.GROQ_API_KEY;
+    this.groqClient = groqApiKey
+      ? new Groq({
+          apiKey: groqApiKey,
+          timeout: GROQ_TIMEOUT_MS,
+          maxRetries: 0,
+        })
+      : null;
+    this.groqModel = process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL;
+
+    // La key se pasa explícitamente y solo si existe, para que el SDK nunca
+    // recurra a OPENAI_API_KEY y la envíe a Google.
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    this.geminiClient = geminiApiKey
+      ? new OpenAI({
+          apiKey: geminiApiKey,
+          baseURL: GEMINI_OPENAI_BASE_URL,
+          timeout: GEMINI_TIMEOUT_MS,
+          maxRetries: 0,
+        })
+      : null;
+    this.geminiModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   }
 
   async analyze(scores: ChasideScores, contextData: ContextData): Promise<AiAnalysisResult> {
-    this.logger.log('Llamando a Groq API para análisis CHASIDE...');
-    
+    this.logger.log('Solicitando análisis CHASIDE a la IA...');
+
     // Identifica las 2 áreas principales
     const rankedAreas = this.getTopAreas(scores);
     const topTwo = rankedAreas.slice(0, 2);
-    
+
     try {
-      this.logger.log('ANTES DE LLAMAR A GROQ');
-
-    const response = await this.client.chat.completions.create({
-      model: 'groq/compound-mini',
-      max_completion_tokens: 2048,
-      messages: [
+      const rawText = await this.complete(
         {
-          role: 'user',
-          content: this.buildPrompt(scores, topTwo, contextData),
+          maxTokens: 2048,
+          messages: [
+            {
+              role: 'user',
+              content: this.buildPrompt(scores, topTwo, contextData),
+            },
+          ],
         },
-      ],
-    });
+        'análisis CHASIDE',
+      );
 
-    this.logger.log('RESPUESTA RECIBIDA DE GROQ');
-
-    const rawText = response.choices[0]?.message?.content;
-
-    if (!rawText) {
-      throw new Error('Groq devolvió una respuesta vacía');
-    }
-
-    this.logger.log(`Longitud de respuesta Groq: ${rawText.length}`);
+      this.logger.log(`Longitud de respuesta IA: ${rawText.length}`);
       const parsed = this.parseResponse(rawText);
       return {
         ...parsed,
         topAreas: topTwo.map((a) => (CHASIDE_AREAS as any)[a].name),
       };
     } catch (error) {
-      this.logger.error(
-        'ERROR COMPLETO DE GROQ:',
-        error instanceof Error ? error.stack : JSON.stringify(error),
-      );
+      if (error instanceof AiRateLimitedError) {
+        this.logger.warn(
+          'Proveedores de IA limitados. Se usará el análisis local predefinido.',
+        );
+      } else {
+        this.logger.error(
+          `Falló el análisis CHASIDE con IA. Se usará el análisis local. Error: ${this.describeError(error)}`,
+        );
+      }
 
       return this.buildFallbackAnalysis(scores, topTwo, contextData);
     }
   }
 
-  async answerVocationalChat(input: VocationalChatInput): Promise<string> {
+  async answerVocationalChat(input: VocationalChatInput): Promise<ChatAnswer> {
     const context = this.buildChatContext(input);
+    const recentTurns = input.recentTurns ?? [];
 
     try {
+      // Solo las secciones presentes: el contexto completo contiene datos personales.
       this.logger.debug(
-      `VOCATIONAL CHAT CONTEXT:\n${JSON.stringify(context, null, 2)}`
-    );
-      const response = await this.client.chat.completions.create({
-        
-        model: 'groq/compound-mini',
-        temperature: 0.6,
-        max_completion_tokens: 500,
-        messages: [
-          {
-            role: 'system',
-            content: this.buildChatSystemPrompt(),
-          },
-          {
-            role: 'user',
-            content: this.buildChatPrompt(
-              input.message,
-              context,
-            ),
-          },
-        ],
-        
-      });
-
-      const answer = response.choices[0].message.content?.trim();
-      if (!answer) {
-        throw new Error('Groq returned an empty response');
+        `Contexto del chat vocacional: [${Object.keys(context).join(', ')}], turnos previos: ${recentTurns.length}`,
+      );
+      const answer = await this.complete(
+        {
+          temperature: 0.6,
+          maxTokens: 500,
+          messages: [
+            {
+              role: 'system',
+              content: this.buildChatSystemPrompt(),
+            },
+            // El contexto del estudiante va en el último mensaje, junto a la
+            // pregunta actual; los turnos previos dan continuidad a la conversación.
+            ...recentTurns,
+            {
+              role: 'user',
+              content: this.buildChatPrompt(input.message, context),
+            },
+          ],
+        },
+        'chat vocacional',
+      );
+      return { answer, source: 'ai' };
+    } catch (error) {
+      if (error instanceof AiRateLimitedError) {
+        return { answer: AI_RATE_LIMITED_MESSAGE, source: 'rate_limited' };
       }
+      this.logger.warn(
+        `La IA falló en el chat vocacional. Se usará respuesta local. Error: ${this.describeError(error)}`,
+      );
+      return {
+        answer: this.buildChatFallback(input.message, context),
+        source: 'fallback',
+      };
+    }
+  }
 
+  /**
+   * Gemini → (cualquier error) → Groq → (HTTP 429) → AiRateLimitedError.
+   * Cada proveedor se llama como máximo una vez y sin reintentos. Si Groq falla
+   * por otro motivo, el error se propaga para que el llamador aplique su
+   * respuesta local existente.
+   */
+  private async complete(
+    request: CompletionRequest,
+    operation: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `[${operation}] Solicitud a Gemini (${this.geminiModel})`,
+      );
+      return await this.requestGemini(request);
+    } catch (error) {
+      this.logGeminiFailure(operation, error);
+    }
+
+    try {
+      const answer = await this.requestGroq(request);
+      this.logger.log(
+        `[${operation}] Respuesta obtenida de Groq (${this.groqModel}, fallback)`,
+      );
       return answer;
     } catch (error) {
+      if (!this.isRateLimitError(error)) {
+        throw error;
+      }
       this.logger.warn(
-        `Groq falló en el chat vocacional. Se usará respuesta local. Error: ${String(error)}`,
+        `[${operation}] Groq respondió HTTP 429. Se devolverá respuesta predefinida.`,
       );
-      return this.buildChatFallback(input.message, context);
+      throw new AiRateLimitedError();
     }
+  }
+
+  /**
+   * Un 4xx distinto de 429 suele indicar un problema de configuración (key,
+   * modelo o parámetros): se registra como error para que no quede oculto tras
+   * el fallback. 429, 5xx, timeouts y errores de red se registran como aviso.
+   */
+  private logGeminiFailure(operation: string, error: unknown): void {
+    const status = (error as { status?: unknown } | null)?.status;
+    const isConfigError =
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500 &&
+      status !== 429;
+    const message = `[${operation}] Gemini falló: ${this.describeError(error)}. Fallback a Groq.`;
+
+    if (isConfigError) {
+      this.logger.error(message);
+    } else {
+      this.logger.warn(message);
+    }
+  }
+
+  private async requestGemini(request: CompletionRequest): Promise<string> {
+    if (!this.geminiClient) {
+      throw new Error('GEMINI_API_KEY no está configurada');
+    }
+
+    const response = await this.geminiClient.chat.completions.create({
+      model: this.geminiModel,
+      temperature: request.temperature,
+      max_tokens: request.maxTokens,
+      // Desactiva el razonamiento interno para que no consuma el presupuesto de
+      // tokens. gemini-3.8-flash rechaza 'minimal' con HTTP 400.
+      reasoning_effort: 'none',
+      messages: request.messages,
+    });
+
+    return this.extractAnswer(response.choices[0]?.message?.content, 'Gemini');
+  }
+
+  private async requestGroq(request: CompletionRequest): Promise<string> {
+    if (!this.groqClient) {
+      throw new Error('GROQ_API_KEY no está configurada');
+    }
+
+    const response = await this.groqClient.chat.completions.create({
+      model: this.groqModel,
+      temperature: request.temperature,
+      max_completion_tokens: request.maxTokens,
+      // gpt-oss razona antes de responder y ese razonamiento cuenta dentro de
+      // max_completion_tokens: 'low' deja casi todo el presupuesto a la respuesta.
+      reasoning_effort: 'low',
+      messages: request.messages,
+    });
+
+    return this.extractAnswer(response.choices[0]?.message?.content, 'Groq');
+  }
+
+  private extractAnswer(
+    content: string | null | undefined,
+    provider: string,
+  ): string {
+    const answer = content?.trim();
+    if (!answer) {
+      throw new Error(`${provider} devolvió una respuesta vacía`);
+    }
+    return answer;
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    return (error as { status?: unknown } | null)?.status === 429;
+  }
+
+  /** Resumen seguro para logs: nunca incluye headers, prompts ni cuerpos de respuesta. */
+  private describeError(error: unknown): string {
+    const status = (error as { status?: unknown } | null)?.status;
+    if (typeof status === 'number') {
+      return `${error instanceof Error ? error.name : 'Error'} (HTTP ${status})`;
+    }
+    return error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : 'Error desconocido';
   }
 
   private getTopAreas(scores: ChasideScores): string[] {
@@ -373,9 +554,9 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
     try {
       const clean = raw.replace(/```json|```/g, '').trim();
       return JSON.parse(clean);
-    } catch (error) {
-      this.logger.error('Error parseando JSON de Groq', error);
-      throw new Error('Respuesta de Groq no es JSON válido');
+    } catch {
+      // No se registra el error original: su mensaje puede incluir fragmentos de la respuesta.
+      throw new Error('La respuesta de la IA no es JSON válido');
     }
   }
 

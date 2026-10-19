@@ -152,6 +152,7 @@ JWT_SECRET="tu_secret_muy_largo_y_aleatorio"
 JWT_EXPIRES_IN="1d"
 REDIS_HOST=localhost
 REDIS_PORT=6379
+GEMINI_API_KEY=tu_api_key_de_gemini
 GROQ_API_KEY=gsk_tu_api_key_aqui
 PORT=3000
 ```
@@ -363,5 +364,8 @@ feature/*   → desarrollo de funcionalidades
 | `JWT_EXPIRES_IN` | Expiración del token | `7d` |
 | `REDIS_HOST` | Host de Redis | `localhost` |
 | `REDIS_PORT` | Puerto de Redis | `6379` |
-| `GROQ_API_KEY` | API key de Groq | `gsk_...` |
+| `GEMINI_API_KEY` | API key de Gemini (proveedor principal de IA) | `AIza...` |
+| `GEMINI_MODEL` | Modelo de Gemini (opcional) | `gemini-3.8-flash` |
+| `GROQ_API_KEY` | API key de Groq (opcional, respaldo cuando Gemini falla) | `gsk_...` |
+| `GROQ_MODEL` | Modelo de Groq (opcional) | `openai/gpt-oss-20b` |
 | `PORT` | Puerto del servidor | `3000` |

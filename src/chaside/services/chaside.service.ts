@@ -4,7 +4,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SubmitAssessmentDto } from '../dto/submit-assessment.dto';
 import { VocationalChatDto } from '../dto/vocational-chat.dto';
 import { ChasideScoringService } from './chaside-scoring.service';
-import { ChasideAiService } from './chaside-ai.service';
+import {
+  ChasideAiService,
+  ChatAnswerSource,
+  ChatTurn,
+} from './chaside-ai.service';
 import { IcfesService } from '../../icfes/icfes.service';
 import { CHASIDE_QUESTIONS_FULL } from '../constants/chaside-questions';
 
@@ -26,8 +30,17 @@ type ChatMessageRecord = {
   normalizedContent: string;
   turnKey: string;
   cacheSourceTurnKey: string | null;
+  metadata?: unknown;
   createdAt: Date;
 };
+
+/** Cantidad de mensajes previos (usuario + asistente) que se envían a la IA. */
+const RECENT_TURNS_LIMIT = 8;
+
+function answerSourceOf(metadata: unknown): string | undefined {
+  const source = (metadata as { source?: unknown } | null)?.source;
+  return typeof source === 'string' ? source : undefined;
+}
 
 @Injectable()
 export class ChasideService {
@@ -214,8 +227,23 @@ export class ChasideService {
       };
     }
 
-    const conversation: any = await this.resolveConversation(userId, context.contextSignature, dto.conversationId);
-    const cachedTurn = await this.findSimilarCachedTurn(userId, context.contextSignature, dto.message);
+    const conversation = await this.resolveConversation(
+      userId,
+      context.contextSignature,
+      dto.conversationId,
+    );
+    const previousMessages: ChatMessageRecord[] = conversation.messages;
+    // La caché solo aplica a la primera pregunta de una conversación: en una
+    // conversación en curso, una pregunta parecida ("explícame más") depende de
+    // lo que se habló antes y necesita una respuesta nueva.
+    const cachedTurn =
+      previousMessages.length === 0
+        ? await this.findSimilarCachedTurn(
+            userId,
+            context.contextSignature,
+            dto.message,
+          )
+        : null;
 
     const turnKey = randomUUID();
     const normalizedContent = this.normalizeChatText(dto.message);
@@ -239,14 +267,18 @@ export class ChasideService {
     });
 
     let answer: string;
+    let source: ChatAnswerSource;
     let cacheSourceTurnKey: string | null = null;
 
     if (cachedTurn) {
       answer = cachedTurn.answer;
+      source = 'ai';
       cacheSourceTurnKey = cachedTurn.turnKey;
     } else {
-      answer = await this.aiService.answerVocationalChat({
+      ({ answer, source } = await this.aiService.answerVocationalChat({
         message: dto.message,
+
+        recentTurns: this.extractRecentConversationTurns(previousMessages),
 
         chasideAnalysis: context.currentAssessment ?? undefined,
 
@@ -278,9 +310,7 @@ export class ChasideService {
               results: context.latestAdaptiveAssessment.vocationalResults,
             }
           : undefined,
-
-        
-      });
+      }));
     }
 
     const assistantMessage = await this.prisma.chatMessage.create({
@@ -293,6 +323,7 @@ export class ChasideService {
         turnKey,
         cacheSourceTurnKey,
         metadata: {
+          source,
           fromCache: Boolean(cachedTurn),
           sourceTurnKey: cacheSourceTurnKey,
           assessmentId: context.currentAssessment?.id ?? null,
@@ -546,7 +577,10 @@ export class ChasideService {
       orderBy: { createdAt: 'asc' },
     });
 
-    if (!cachedAssistant) {
+    // Solo se reutilizan respuestas generadas por la IA. El aviso de límite y la
+    // respuesta local de emergencia son temporales, y los mensajes antiguos sin
+    // origen registrado no permiten saber si vinieron de la IA.
+    if (!cachedAssistant || answerSourceOf(cachedAssistant.metadata) !== 'ai') {
       return null;
     }
 
@@ -556,16 +590,26 @@ export class ChasideService {
     };
   }
 
-  private extractRecentConversationTurns(messages: ChatMessageRecord[]) {
-    return messages.slice(-8).map((message) => ({
+  private extractRecentConversationTurns(
+    messages: ChatMessageRecord[],
+  ): ChatTurn[] {
+    // El aviso de límite no aporta a la conversación.
+    const relevantMessages = messages.filter(
+      (message) => answerSourceOf(message.metadata) !== 'rate_limited',
+    );
+
+    return relevantMessages.slice(-RECENT_TURNS_LIMIT).map((message) => ({
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content: message.content,
     }));
   }
 
   private normalizeChatText(value: string): string {
+    // No se eliminan palabras que invierten o contrastan el sentido ('sin', 'con',
+    // 'contra', 'antes'): "carreras sin matemáticas" y "carreras con matemáticas"
+    // deben seguir siendo preguntas distintas para la caché.
     const stopWords = new Set([
-      'a', 'al', 'algo', 'algunas', 'algunos', 'ante', 'antes', 'como', 'con', 'contra', 'cual', 'cuales', 'de', 'del', 'desde', 'donde', 'el', 'ella', 'ellas', 'ellos', 'en', 'entre', 'es', 'esa', 'ese', 'eso', 'esta', 'este', 'esto', 'ha', 'hay', 'la', 'las', 'le', 'les', 'lo', 'los', 'me', 'mi', 'mis', 'mucho', 'muy', 'o', 'para', 'pero', 'por', 'que', 'se', 'sin', 'sobre', 'su', 'sus', 'te', 'tu', 'tus', 'un', 'una', 'unas', 'unos', 'y', 'ya', 'voy', 'puedes', 'podrias', 'podrías', 'quiero', 'quisiera', 'quieres', 'dime', 'me', 'mi', 'sobre', 'segun', 'según'
+      'a', 'al', 'algo', 'algunas', 'algunos', 'ante', 'como', 'cual', 'cuales', 'de', 'del', 'desde', 'donde', 'el', 'ella', 'ellas', 'ellos', 'en', 'entre', 'es', 'esa', 'ese', 'eso', 'esta', 'este', 'esto', 'ha', 'hay', 'la', 'las', 'le', 'les', 'lo', 'los', 'me', 'mi', 'mis', 'mucho', 'muy', 'o', 'para', 'pero', 'por', 'que', 'se', 'sobre', 'su', 'sus', 'te', 'tu', 'tus', 'un', 'una', 'unas', 'unos', 'y', 'ya', 'voy', 'puedes', 'podrias', 'podrías', 'quiero', 'quisiera', 'quieres', 'dime', 'me', 'mi', 'sobre', 'segun', 'según'
     ]);
 
     return value
