@@ -403,12 +403,15 @@ export class ChasideService {
       : refreshedAssessments[0] ?? null;
 
     const latestIcfesAnalysis = await this.icfesService.findLatest(userId);
+    const adaptiveWhere = {
+      userId,
+      assessmentType: 'VOCATIONAL_AREAS',
+      status: 'COMPLETED',
+    } as const;
     const latestAdaptiveAssessment = await this.prisma.vocationalAssessment.findFirst({
-      where: {
-        userId,
-        assessmentType: 'VOCATIONAL_AREAS',
-        status: 'COMPLETED',
-      },
+      where: assessmentId
+        ? { ...adaptiveWhere, id: assessmentId }
+        : adaptiveWhere,
       orderBy: [
         { completedAt: 'desc' },
         { updatedAt: 'desc' },
@@ -426,15 +429,38 @@ export class ChasideService {
       },
     });
 
+    // `assessmentId` puede apuntar a un intento CHASIDE. En ese caso no debemos
+    // perder el último resultado adaptativo disponible para el contexto del chat.
+    const resolvedAdaptiveAssessment = latestAdaptiveAssessment ?? (assessmentId
+      ? await this.prisma.vocationalAssessment.findFirst({
+          where: adaptiveWhere,
+          orderBy: [
+            { completedAt: 'desc' },
+            { updatedAt: 'desc' },
+          ],
+          select: {
+            id: true,
+            status: true,
+            currentPhase: true,
+            engineVersion: true,
+            questionnaireVersion: true,
+            scoringVersion: true,
+            vocationalProfile: true,
+            vocationalResults: true,
+            updatedAt: true,
+          },
+        })
+      : null);
+
     return {
       currentAssessment: refreshedCurrentAssessment,
       recentAssessments: refreshedAssessments,
       latestIcfesAnalysis,
-      latestAdaptiveAssessment,
+      latestAdaptiveAssessment: resolvedAdaptiveAssessment,
       contextSignature: this.buildContextSignature(
         refreshedCurrentAssessment,
         latestIcfesAnalysis,
-        latestAdaptiveAssessment,
+        resolvedAdaptiveAssessment,
       ),
     };
   }
