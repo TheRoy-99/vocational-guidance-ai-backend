@@ -37,11 +37,8 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # dotenv environment variable files
-# Se ignoran todos los .env con secretos; .env.example es la plantilla
-# (solo marcadores) y sí se versiona.
 .env
 .env.*
-!.env.example
 
 # temp directory
 .temp
