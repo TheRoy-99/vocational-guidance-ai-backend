@@ -12,6 +12,20 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_TIMEOUT_MS = 30_000;
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 const GROQ_TIMEOUT_MS = 30_000;
+const ADAPTIVE_AREA_NAMES: Record<string, string> = {
+  A1: 'Tecnología y Computación',
+  A2: 'Ciencia e Investigación',
+  A3: 'Salud y Bienestar',
+  A4: 'Psicología y Comportamiento',
+  A5: 'Negocios y Emprendimiento',
+  A6: 'Economía y Finanzas',
+  A7: 'Comunicación y Marketing',
+  A8: 'Diseño, Arte y Creatividad',
+  A9: 'Educación y Desarrollo Humano',
+  A10: 'Derecho, Sociedad y Humanidades',
+  A11: 'Ingeniería, Construcción y Espacios',
+  A12: 'Naturaleza y Medio Ambiente',
+};
 
 export const AI_RATE_LIMITED_MESSAGE =
   'El servicio de IA está temporalmente limitado. Por favor, inténtalo nuevamente más tarde.';
@@ -654,9 +668,11 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
       'Utiliza el ICFES como evidencia del desempeño académico, no como criterio único para elegir carrera.',
 
       'EVALUACIÓN VOCACIONAL ADAPTATIVA:',
-      'Utiliza sus áreas, puntuaciones, confianza y dimensiones como evidencia central del perfil vocacional.',
-      'Una puntuación alta representa una afinidad relativa dentro de esta evaluación, no una probabilidad ni una garantía de éxito.',
-      'Considera la confianza y la fase del motor para distinguir entre una señal clara y una dirección que todavía debe explorarse.',
+      'Utiliza sus resultados para comprender mejor la dirección del estudiante, pero tradúcelos siempre a una explicación humana y cotidiana.',
+      'Las áreas A1, A2 y similares son códigos internos: nunca los muestres al estudiante. Usa el nombre comprensible del área o descríbela con palabras sencillas.',
+      'No muestres puntajes, porcentajes, niveles de confianza, diferencias numéricas, nombres de fases del motor ni métricas técnicas, salvo que el estudiante pregunte explícitamente por ellos.',
+      'No digas que alguien tiene una confianza del 93%, que lidera con 20.06 o que una diferencia se mantuvo constante. Explica qué sugiere el resultado en términos de intereses, actividades y caminos que podría explorar.',
+      'Una señal clara significa que varias respuestas apuntan en una dirección; no significa certeza, talento garantizado ni que exista una única carrera correcta.',
       'No inventes el significado de una dimensión ni conviertas automáticamente una puntuación en una habilidad profesional.',
 
       'DATOS VS. ANÁLISIS:',
@@ -677,13 +693,15 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
       'Si falta información para diferenciar opciones, dilo explícitamente en lugar de inventarla.',
 
       'ESTILO:',
-      'Responde como una conversación, no como un informe académico.',
-      'Sé directo, natural y fácil de leer.',
-      'Normalmente responde entre 60 y 120 palabras.',
+      'Habla como un orientador vocacional o psicopedagogo cercano que conversa con un joven: con calidez, respeto y sin sonar clínico ni académico.',
+      'Usa palabras comunes, frases cortas y ejemplos de la vida real. Evita tecnicismos, jerga estadística y lenguaje institucional.',
+      'Sé directo, natural, claro y conciso. Si puedes decirlo con menos palabras, hazlo.',
+      'Normalmente responde entre 45 y 90 palabras.',
       'Las preguntas sencillas pueden responderse con menos palabras.',
       'Utiliza Markdown, párrafos cortos y listas cuando ayuden.',
-      'Usa negrita con moderación y emojis ocasionalmente.',
+      'Usa negrita con moderación y emojis ocasionalmente, sin convertir la respuesta en una presentación.',
       'Evita tablas e introducciones largas salvo que sean necesarias.',
+      'Cuando expliques un resultado, empieza por su significado práctico para la persona y termina, si aporta valor, con un paso pequeño que pueda probar.',
 
       'ALCANCE:',
       'Responde únicamente sobre orientación vocacional, carreras, estudios, habilidades, intereses, formación y desarrollo profesional.',
@@ -709,13 +727,18 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
   - Responde directamente a la pregunta.
   - No repitas información que no sea necesaria.
   - Prioriza los datos del estudiante relevantes para esta pregunta.
-  - Mantén la respuesta normalmente entre 60 y 120 palabras.
+  - Habla con cercanía, como un orientador vocacional o psicopedagogo que quiere ayudar, no como un informe.
+  - Usa palabras sencillas, frases cortas y ejemplos concretos.
+  - Mantén la respuesta normalmente entre 45 y 90 palabras.
   - Si la pregunta puede responderse en pocas frases, hazlo así.
   - Usa párrafos cortos y listas con viñetas cuando ayuden a organizar la información.
   - Usa **negrita** solo para conceptos realmente importantes.
   - Puedes usar 1 o 2 emojis ocasionalmente si hacen la respuesta más natural.
   - Evita tablas salvo que sean realmente necesarias.
   - No conviertas la respuesta en un informe.
+  - Traduce los resultados a lenguaje cotidiano: no muestres códigos como A1 o A11, puntajes, porcentajes, niveles de confianza ni nombres técnicos de dimensiones o fases, a menos que la persona pregunte específicamente por esos datos.
+  - En lugar de enumerar cifras, explica qué podría significar el patrón en actividades, intereses o caminos para explorar.
+  - No presentes el resultado como una certeza, diagnóstico o decisión tomada. Usa expresiones como "parece que", "podría encajar" o "vale la pena explorar".
   - No hagas una conclusión larga.
   - Solo recomienda una siguiente pregunta o tema para explorar cuando aporte valor; no lo hagas siempre.
   - No inventes información que no aparezca en el contexto.
@@ -748,10 +771,9 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
         ? topCareers.join(', ')
         : 'las opciones que mejor encajen con tu perfil';
 
-    const icfesText =
-      typeof icfes?.globalScore === 'number'
-        ? `Tu puntaje global del ICFES es ${icfes.globalScore}.`
-        : '';
+    const icfesText = icfes
+      ? 'También podemos revisar tus resultados académicos para identificar fortalezas y aspectos que convenga reforzar.'
+      : '';
 
     const greeting = userName
       ? `Hola, ${userName}.`
@@ -760,7 +782,7 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
     return [
       greeting,
       'Puedo ayudarte con orientación vocacional.',
-      `Según los resultados disponibles, puedes explorar ${careersText}.`,
+      `Según los resultados disponibles, podrías explorar ${careersText}.`,
       icfesText,
       'También puedo ayudarte a comparar carreras, analizar tus fortalezas o relacionar tus resultados con una posible carrera.',
     ]
@@ -799,6 +821,19 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
   }
 
   if (input.adaptiveAssessment) {
+    const adaptiveResults = Array.isArray(input.adaptiveAssessment.results)
+      ? input.adaptiveAssessment.results.map((result, index) => {
+          if (!result || typeof result !== 'object') return result;
+          const item = result as Record<string, unknown>;
+          const area = typeof item.area === 'string' ? item.area : undefined;
+          return {
+            ...item,
+            areaName: area ? ADAPTIVE_AREA_NAMES[area] ?? area : undefined,
+            position: index + 1,
+          };
+        })
+      : input.adaptiveAssessment.results;
+
     context.adaptiveAssessment = {
       assessmentId: input.adaptiveAssessment.id,
       status: input.adaptiveAssessment.status,
@@ -807,7 +842,8 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
       questionnaireVersion: input.adaptiveAssessment.questionnaireVersion,
       scoringVersion: input.adaptiveAssessment.scoringVersion,
       profile: input.adaptiveAssessment.profile,
-      results: input.adaptiveAssessment.results,
+      areaNames: ADAPTIVE_AREA_NAMES,
+      results: adaptiveResults,
     };
   }
 
