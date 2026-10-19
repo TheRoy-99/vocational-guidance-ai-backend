@@ -31,6 +31,11 @@ export class ChasideController {
     return this.chasideService.getMyAssessments(req.user.id);
   }
 
+  @Get('chat/history')
+  getChatHistory(@Request() req: any) {
+    return this.chasideService.getChatHistory(req.user.id);
+  }
+
   @Get(':id/results')
   getResults(
     @Param('id', ParseUUIDPipe) id: string,
@@ -45,8 +50,4 @@ export class ChasideController {
     return this.chasideService.chat(req.user.id, dto);
   }
 
-  @Get('chat/history')
-  getChatHistory(@Request() req: any) {
-    return this.chasideService.getChatHistory(req.user.id);
-  }
 }
