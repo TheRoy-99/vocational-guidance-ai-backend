@@ -2,6 +2,7 @@ import { Body, Controller, Param, Patch, Post, Request, UseGuards } from '@nestj
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FeedbackService } from './feedback.service';
 import type { AssessmentFeedbackInput } from './feedback.service';
+import { CreateFeedbackDto } from './dto/create-feedback.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('feedback')
@@ -9,12 +10,12 @@ export class FeedbackController {
   constructor(private readonly feedbackService: FeedbackService) {}
 
   @Post()
-  async create(@Request() req: any, @Body() body: any) {
+  async create(@Request() req: any, @Body() body: CreateFeedbackDto) {
     const userId = req.user?.id ?? null;
     const record = await this.feedbackService.save({
       userId,
       source: body.source ?? 'UNKNOWN',
-      rating: typeof body.rating === 'number' ? body.rating : null,
+      rating: body.rating ?? null,
       message: body.message ?? null,
       metadata: body.metadata ?? null,
     });
