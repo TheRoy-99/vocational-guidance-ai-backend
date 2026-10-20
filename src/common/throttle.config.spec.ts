@@ -22,7 +22,7 @@ describe('createRequestTracker', () => {
   it('identifica al usuario por el id de un token válido', () => {
     const req = {
       headers: { authorization: `Bearer ${sign('user-1')}` },
-      body: { email: 'otro@correo.com' },
+      body: { email: 'otro@example.com' },
       ip: '10.0.0.1',
     };
     expect(tracker(req)).toBe('user:user-1');
@@ -40,10 +40,10 @@ describe('createRequestTracker', () => {
   it('en login y registro cuenta por correo, sin distinguir mayúsculas', () => {
     const req = {
       headers: {},
-      body: { email: '  Ana@Correo.com ' },
+      body: { email: '  Ana@Example.com ' },
       ip: '10.0.0.1',
     };
-    expect(tracker(req)).toBe('email:ana@correo.com');
+    expect(tracker(req)).toBe('email:ana@example.com');
   });
 
   it('sin token ni correo, cuenta por IP', () => {
@@ -92,12 +92,12 @@ describe('límite de peticiones (integración)', () => {
     const login = (email: string) =>
       request(server).post('/login').send({ email });
 
-    await login('ana@correo.com').expect(201);
-    await login('ana@correo.com').expect(201);
-    const blocked = await login('ana@correo.com').expect(429);
+    await login('ana@example.com').expect(201);
+    await login('ana@example.com').expect(201);
+    const blocked = await login('ana@example.com').expect(429);
     expect(JSON.stringify(blocked.body)).toContain(THROTTLE_ERROR_MESSAGE);
 
     // Otro estudiante (aunque comparta la IP) no queda bloqueado.
-    await login('luis@correo.com').expect(201);
+    await login('luis@example.com').expect(201);
   });
 });

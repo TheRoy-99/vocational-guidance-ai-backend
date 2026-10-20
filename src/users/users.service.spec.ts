@@ -96,10 +96,10 @@ describe('UsersService - control de acceso', () => {
 
   describe('cambio de correo', () => {
     it('guarda el correo en minúsculas y sin espacios', async () => {
-      await service.update(student, OWNER_ID, { email: '  Ana@Correo.COM ' });
+      await service.update(student, OWNER_ID, { email: '  Ana@Example.COM ' });
 
       expect(user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { email: 'ana@correo.com' } }),
+        expect.objectContaining({ data: { email: 'ana@example.com' } }),
       );
     });
 
@@ -107,7 +107,7 @@ describe('UsersService - control de acceso', () => {
       user.findFirst.mockResolvedValue({ id: OTHER_ID });
 
       await expect(
-        service.update(student, OWNER_ID, { email: 'ocupado@correo.com' }),
+        service.update(student, OWNER_ID, { email: 'ocupado@example.com' }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(user.update).not.toHaveBeenCalled();
     });
@@ -115,7 +115,7 @@ describe('UsersService - control de acceso', () => {
     it('permite volver a guardar el propio correo', async () => {
       user.findFirst.mockResolvedValue({ id: OWNER_ID });
 
-      await service.update(student, OWNER_ID, { email: 'mio@correo.com' });
+      await service.update(student, OWNER_ID, { email: 'mio@example.com' });
 
       expect(user.update).toHaveBeenCalledTimes(1);
     });

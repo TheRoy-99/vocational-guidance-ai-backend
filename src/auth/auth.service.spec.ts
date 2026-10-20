@@ -21,7 +21,7 @@ const OTHER_PLAIN_TEXT = 'OtraClave123';
 const USER = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Ana',
-  email: 'ana@correo.com',
+  email: 'ana@example.com',
   password: STORED_HASH,
   role: 'STUDENT',
 };
@@ -72,11 +72,11 @@ describe('AuthService - restablecer contraseña', () => {
   describe('forgotPassword', () => {
     it('envía un enlace al frontend con el token, al correo de la cuenta', async () => {
       const result = await service.forgotPassword({
-        email: ' Ana@Correo.com ',
+        email: ' Ana@Example.com ',
       });
 
       expect(result).toEqual({ message: FORGOT_PASSWORD_MESSAGE });
-      expect(usersService.findByEmail).toHaveBeenCalledWith('ana@correo.com');
+      expect(usersService.findByEmail).toHaveBeenCalledWith('ana@example.com');
       const [to, , resetUrl, minutes] = mailService.sendPasswordReset.mock
         .calls[0] as [string, string, string, number];
       expect(to).toBe(USER.email);
@@ -90,7 +90,7 @@ describe('AuthService - restablecer contraseña', () => {
       usersService.findByEmail.mockResolvedValue(null);
 
       const result = await service.forgotPassword({
-        email: 'nadie@correo.com',
+        email: 'nadie@example.com',
       });
 
       expect(result).toEqual({ message: FORGOT_PASSWORD_MESSAGE });

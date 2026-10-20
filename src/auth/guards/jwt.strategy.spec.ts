@@ -20,19 +20,19 @@ describe('JwtStrategy.validate', () => {
   it('usa el rol y el correo actuales de la base, no los del token', async () => {
     findById.mockResolvedValue({
       id: USER_ID,
-      email: 'nuevo@correo.com',
+      email: 'nuevo@example.com',
       role: 'STUDENT',
     });
 
     const user = await strategy.validate({
       sub: USER_ID,
-      email: 'viejo@correo.com',
+      email: 'viejo@example.com',
       role: 'ADMIN',
     });
 
     expect(user).toEqual({
       id: USER_ID,
-      email: 'nuevo@correo.com',
+      email: 'nuevo@example.com',
       role: 'STUDENT',
     });
   });
@@ -41,7 +41,7 @@ describe('JwtStrategy.validate', () => {
     findById.mockResolvedValue(null);
 
     await expect(
-      strategy.validate({ sub: USER_ID, email: 'x@correo.com', role: 'ADMIN' }),
+      strategy.validate({ sub: USER_ID, email: 'x@example.com', role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
