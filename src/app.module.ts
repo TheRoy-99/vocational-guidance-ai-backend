@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bull';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { throttlerOptionsFactory } from './common/throttle.config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -30,6 +33,14 @@ import { ReportsModule } from './reports/reports.module';
     IcfesModule,
     FeedbackModule,
     ReportsModule,
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: throttlerOptionsFactory,
+    }),
+  ],
+  providers: [
+    // Límite de peticiones en todas las rutas; ver common/throttle.config.ts.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

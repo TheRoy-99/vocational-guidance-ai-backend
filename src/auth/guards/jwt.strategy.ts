@@ -1,7 +1,8 @@
 // Decisión: JwtStrategy valida el token en cada request protegido.
-// El payload que firmamos en AuthService incluye sub (userId) y email,
-// que son suficientes para identificar al usuario sin consultar la DB
-// en cada request (stateless — principio fundamental de JWT).
+// La firma del token prueba quién es el usuario (sub), pero el resto de sus
+// datos se toman de la base: así un usuario borrado pierde el acceso de
+// inmediato, y un cambio de rol o de correo se aplica sin esperar a que el
+// token venza.
 
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
@@ -33,6 +34,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException('Token inválido o usuario no encontrado');
     }
-    return { id: payload.sub, email: payload.email, role: payload.role };
+    return { id: user.id, email: user.email, role: user.role };
   }
 }

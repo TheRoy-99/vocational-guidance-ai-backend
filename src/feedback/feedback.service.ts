@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { appendFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  assertValidAssessmentFeedback,
+  assertValidFeedbackEvent,
+} from './feedback.validation';
 
 export type FeedbackRecord = { userId?: string | null; source?: string | null; rating?: number | null; message?: string | null; metadata?: unknown; createdAt: string };
 export type AssessmentFeedbackInput = {
@@ -9,6 +13,8 @@ export type AssessmentFeedbackInput = {
   answers?: Array<{ questionId: string; responseType: string; responseValue?: unknown; responseText?: string; position: number }>;
   [key: string]: unknown;
 };
+
+const MAX_FEEDBACK_LOG_LINE_LENGTH = 10_000;
 
 const INTEGER_FIELDS = new Set([
   'clarityGain',
@@ -44,11 +50,17 @@ export class FeedbackService {
 
   async save(record: Omit<FeedbackRecord, 'createdAt'>) {
     const payload: FeedbackRecord = { ...record, createdAt: new Date().toISOString() };
+    // Cada línea del log queda acotada: sin esto, metadata podría ocupar hasta
+    // el límite del body (2 MB) por petición.
+    if (JSON.stringify(payload).length > MAX_FEEDBACK_LOG_LINE_LENGTH) {
+      throw new BadRequestException('El feedback es demasiado grande');
+    }
     try { await appendFile(this.logPath, JSON.stringify(payload) + '\n', { encoding: 'utf8' }); this.logger.log(`Feedback registrado (${payload.source ?? 'unknown'})`); } catch (e) { this.logger.error('No fue posible escribir feedback en disco', e as any); throw e; }
     return payload;
   }
 
   async saveAssessmentFeedback(userId: string, input: AssessmentFeedbackInput) {
+    assertValidAssessmentFeedback(input, { requireCreateFields: true });
     const existing = await this.prisma.assessmentFeedback.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
     if (existing) return existing;
     if (input.assessmentId) {
@@ -67,6 +79,7 @@ const fields = ['respondentProfile', 'clarityGain', 'perceivedUtility', 'selfPer
   }
 
   async addEvent(userId: string, feedbackId: string, eventType: string, position?: number) {
+    assertValidFeedbackEvent(eventType, position);
     const feedback = await this.prisma.assessmentFeedback.findFirst({ where: { id: feedbackId, userId }, select: { id: true } });
     if (!feedback) return null;
     if (eventType === 'feedback_abandoned') {
@@ -76,6 +89,7 @@ const fields = ['respondentProfile', 'clarityGain', 'perceivedUtility', 'selfPer
   }
 
   async updateAssessmentFeedback(userId: string, feedbackId: string, input: Omit<AssessmentFeedbackInput, 'idempotencyKey'>) {
+    assertValidAssessmentFeedback(input, { requireCreateFields: false });
     const current = await this.prisma.assessmentFeedback.findFirst({ where: { id: feedbackId, userId }, select: { id: true } });
     if (!current) return null;
     const fields = ['respondentProfile', 'clarityGain', 'perceivedUtility', 'selfPerceivedAlignment', 'discoveryEffect', 'recommendationRelevance', 'adaptiveLogicPerception', 'questionRelevance', 'actionIntent', 'preTestClarity', 'studentOutcome', 'studentPerceivedBenefits', 'systemResultCoherence', 'adaptiveMethodologyPerception', 'educationalPotential', 'vocationalGuidanceConfidence', 'openFeedback', 'disagreementReason'] as const;
