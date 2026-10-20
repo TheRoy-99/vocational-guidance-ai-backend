@@ -10,12 +10,19 @@ import {
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 
+// Valores de prueba sin forma de secreto real (los escáneres como GitGuardian
+// marcan textos con forma de hash bcrypt o literales asignados a "password").
 const JWT_SECRET = 'secreto-de-prueba';
+const STORED_HASH = 'hash-guardado-de-prueba';
+const STORED_HASH_AFTER_CHANGE = 'hash-guardado-despues-del-cambio';
+const NEW_PLAIN_TEXT = 'NuevaClave123';
+const OTHER_PLAIN_TEXT = 'OtraClave123';
+
 const USER = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Ana',
   email: 'ana@correo.com',
-  password: '$2b$12$hashActualDeLaContrasena',
+  password: STORED_HASH,
   role: 'STUDENT',
 };
 
@@ -103,14 +110,14 @@ describe('AuthService - restablecer contraseña', () => {
     it('cambia la contraseña con un enlace válido', async () => {
       const token = await requestResetToken();
 
-      await service.resetPassword({ token, password: 'NuevaClave123' });
+      await service.resetPassword({ token, password: NEW_PLAIN_TEXT });
 
       const [id, hashed] = usersService.updatePassword.mock.calls[0] as [
         string,
         string,
       ];
       expect(id).toBe(USER.id);
-      await expect(bcrypt.compare('NuevaClave123', hashed)).resolves.toBe(true);
+      await expect(bcrypt.compare(NEW_PLAIN_TEXT, hashed)).resolves.toBe(true);
     });
 
     it('rechaza reutilizar el enlace después de cambiar la contraseña', async () => {
@@ -118,11 +125,11 @@ describe('AuthService - restablecer contraseña', () => {
       // La contraseña ya cambió: el hash guardado es otro.
       usersService.findByIdWithPassword.mockResolvedValue({
         ...USER,
-        password: '$2b$12$otroHashDespuesDelCambio',
+        password: STORED_HASH_AFTER_CHANGE,
       });
 
       await expect(
-        service.resetPassword({ token, password: 'OtraClave123' }),
+        service.resetPassword({ token, password: OTHER_PLAIN_TEXT }),
       ).rejects.toThrow(INVALID_RESET_LINK_MESSAGE);
       expect(usersService.updatePassword).not.toHaveBeenCalled();
     });
@@ -134,7 +141,7 @@ describe('AuthService - restablecer contraseña', () => {
       );
 
       await expect(
-        service.resetPassword({ token: expired, password: 'NuevaClave123' }),
+        service.resetPassword({ token: expired, password: NEW_PLAIN_TEXT }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -144,7 +151,7 @@ describe('AuthService - restablecer contraseña', () => {
       await expect(
         service.resetPassword({
           token: sessionToken,
-          password: 'NuevaClave123',
+          password: NEW_PLAIN_TEXT,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -153,7 +160,7 @@ describe('AuthService - restablecer contraseña', () => {
       await expect(
         service.resetPassword({
           token: 'no-es-un-token',
-          password: 'NuevaClave123',
+          password: NEW_PLAIN_TEXT,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });

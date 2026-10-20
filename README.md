@@ -370,7 +370,7 @@ feature/*   → desarrollo de funcionalidades
 | `GROQ_MODEL` | Modelo de Groq (opcional) | `openai/gpt-oss-20b` |
 | `FRONTEND_URL` | URL del frontend: origen permitido por CORS y base del enlace para restablecer la contraseña | `https://...` |
 | `SMTP_USER` | Correo que envía el enlace de "olvidé mi contraseña" | `tu_correo@gmail.com` |
-| `SMTP_PASS` | Contraseña de aplicación de Gmail (no la contraseña normal) | `abcd efgh ijkl mnop` |
+| `SMTP_PASS` | Contraseña de aplicación de Gmail (no la contraseña normal) | Las 16 letras que genera Google |
 | `SMTP_HOST` / `SMTP_PORT` | Servidor SMTP (opcional, por defecto Gmail) | `smtp.gmail.com` / `465` |
 | `MAIL_FROM` | Remitente que ve el usuario (opcional) | `OrientaAI <tu_correo@gmail.com>` |
 | `PORT` | Puerto del servidor | `3000` |
