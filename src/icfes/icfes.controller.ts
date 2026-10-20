@@ -9,9 +9,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { IcfesService } from './icfes.service';
+import { perMinute, THROTTLE_LIMITS } from '../common/throttle.config';
 
 type UploadedPdfFile = {
   buffer: Buffer;
@@ -26,6 +28,9 @@ export class IcfesController {
   constructor(private readonly icfesService: IcfesService) {}
 
   @Post('analyze')
+  // Los guards corren antes que los interceptores: al superar el límite se
+  // responde 429 sin que multer llegue a leer el archivo.
+  @Throttle(perMinute(THROTTLE_LIMITS.icfesUpload))
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),

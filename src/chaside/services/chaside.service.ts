@@ -95,7 +95,9 @@ export class ChasideService {
         where: { id: assessment.id },
         data: { status: 'FAILED' },
       });
-      return { assessmentId: assessment.id, status: 'FAILED', queueError: e?.message ?? String(e) };
+      // El detalle del error queda solo en el log: puede revelar datos internos
+      // (base de datos, código) y el frontend no lo usa.
+      return { assessmentId: assessment.id, status: 'FAILED' };
     }
   }
 
