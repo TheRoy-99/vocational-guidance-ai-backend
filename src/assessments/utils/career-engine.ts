@@ -28,16 +28,21 @@ export interface StrengthAssessment {
   value: number;
 }
 
-function normalizeText(value: unknown): string {
+/** Normalización canónica: hace equivalentes mayúsculas, minúsculas y tildes. */
+export function canonicalizeText(value: unknown): string {
   if (Array.isArray(value)) {
-    return value.map((item) => normalizeText(item)).join(" ");
+    return value.map((item) => canonicalizeText(item)).join(" ");
   }
 
   if (value === null || value === undefined) {
     return "";
   }
 
-  return String(value);
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function normalizeList(value: unknown): string[] {
@@ -45,7 +50,7 @@ function normalizeList(value: unknown): string[] {
     return value.flatMap((item) => normalizeList(item));
   }
 
-  const text = normalizeText(value).trim();
+  const text = canonicalizeText(value);
   if (!text) {
     return [];
   }
@@ -54,10 +59,26 @@ function normalizeList(value: unknown): string[] {
 }
 
 function includesAny(source: string[], candidates: string[]): boolean {
-  const normalizedSource = source.map((item) => item.toLowerCase());
+  const normalizedSource = source.map((item) => canonicalizeText(item));
   return candidates.some((candidate) =>
-    normalizedSource.some((item) => item.includes(candidate.toLowerCase())),
+    normalizedSource.some((item) => item.includes(canonicalizeText(candidate))),
   );
+}
+
+function countCanonicalOccurrences(source: string, keyword: string): number {
+  const normalizedSource = canonicalizeText(source);
+  const normalizedKeyword = canonicalizeText(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!normalizedKeyword) return 0;
+  return normalizedSource.match(new RegExp(normalizedKeyword, "g"))?.length ?? 0;
+}
+
+function canonicalKeywordWeights(keywords: Record<string, number>): Map<string, number> {
+  const result = new Map<string, number>();
+  Object.entries(keywords).forEach(([keyword, weight]) => {
+    const canonical = canonicalizeText(keyword);
+    result.set(canonical, Math.max(result.get(canonical) ?? 0, weight));
+  });
+  return result;
 }
 
 // Para agregar una carrera nueva:
@@ -289,25 +310,25 @@ const CAREERS_METADATA: Record<
  */
 export function analyzeAnswers(answers: Record<number, any>): RecommendationResult {
   const age = Number(answers[1] || 0);
-  const grade = normalizeText(answers[2]);
+  const grade = canonicalizeText(answers[2]);
   const interests = normalizeList(answers[3]);
   const favoriteSubjects = normalizeList(answers[4]);
   const hobbies = normalizeList(answers[5]);
-  const goals = normalizeText(answers[6]);
+  const goals = canonicalizeText(answers[6]);
 
   // Afinidad cognitiva
-  const thinkingStyle = normalizeText(answers[7]);
-  const coreStrength = normalizeText(answers[8]);
+  const thinkingStyle = canonicalizeText(answers[7]);
+  const coreStrength = canonicalizeText(answers[8]);
 
   // Preferencias profesionales
-  const professionalArea = normalizeText(answers[9]);
-  const workEnvironment = normalizeText(answers[10]);
+  const professionalArea = canonicalizeText(answers[9]);
+  const workEnvironment = canonicalizeText(answers[10]);
 
   // Comportamiento y motivación
   const resilience = Number(answers[11] || 3);
 
   // IA adaptativa
-  const adaptiveExploration = normalizeText(answers[12]);
+  const adaptiveExploration = canonicalizeText(answers[12]);
 
   const ageContext = age > 0
     ? age < 15
@@ -343,11 +364,13 @@ export function analyzeAnswers(answers: Record<number, any>): RecommendationResu
     let score = 0;
 
     // Buscar coincidencias de palabras clave
-    Object.entries(keywords).forEach(([keyword, weight]) => {
-      const normalizedKeyword = keyword.toLowerCase();
-      const keywordCount = (responseText.match(new RegExp(normalizedKeyword, "g")) || [])
-        .length;
-      score += keywordCount * weight;
+    canonicalKeywordWeights(keywords).forEach((weight, keyword) => {
+      const keywordCount = countCanonicalOccurrences(responseText, keyword);
+      if (keywordCount > 0) {
+        // Rendimientos decrecientes: repetir una palabra no multiplica
+        // linealmente la influencia de una respuesta extensa.
+        score += weight * (1 + Math.log(keywordCount));
+      }
     });
 
     // Ajustar score basado en tech comfort (para carreras tech)
@@ -498,7 +521,9 @@ export function analyzeAnswers(answers: Record<number, any>): RecommendationResu
 
   // Ordenar carreras por score
   const sortedCareers = Object.entries(careerScores)
-    .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+    .sort(([careerA, scoreA], [careerB, scoreB]) =>
+      scoreB - scoreA || canonicalizeText(careerA).localeCompare(canonicalizeText(careerB)),
+    )
     .slice(0, 5); // Top 5
 
   // Construir recomendaciones

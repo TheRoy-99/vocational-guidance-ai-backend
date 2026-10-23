@@ -374,3 +374,52 @@ feature/*   → desarrollo de funcionalidades
 | `SMTP_HOST` / `SMTP_PORT` | Servidor SMTP (opcional, por defecto Gmail) | `smtp.gmail.com` / `465` |
 | `MAIL_FROM` | Remitente que ve el usuario (opcional) | `OrientaAI <tu_correo@gmail.com>` |
 | `PORT` | Puerto del servidor | `3000` |
+
+---
+
+## Auditoría reproducible y garantías de interpretación
+
+El backend expone una verificación pública y sintética en:
+
+```text
+GET /api/audit/verification
+```
+
+En esta versión el prefijo configurado por la aplicación es `/api`. El endpoint no requiere autenticación y no utiliza datos de usuarios: devuelve únicamente evidencia controlada para la demostración. El frontend la presenta en `/audit` junto con la auditoría del motor adaptativo.
+
+### Tres verificaciones principales
+
+1. **Reproducibilidad y estabilidad del motor.** `career-engine.stability.spec.ts` comprueba la normalización de texto, la invariancia ante tildes, la deduplicación de palabras clave, el resultado determinista en 100 ejecuciones y el desempate canónico. El frontend complementa esto recorriendo el flujo adaptativo completo y revisando preguntas, fases, ruta y ranking.
+
+2. **Exactitud del lector ICFES Saber 11.** `IcfesService.auditParserContract()` procesa un caso controlado con valores conocidos y exige coincidencia exacta del puntaje global, percentil y cinco áreas. También rechaza valores fuera de rango: 0–500 para el global y 0–100 para percentiles y áreas. Esta comprobación es un contrato de regresión; no significa que todos los formatos futuros de PDF estén cubiertos.
+
+3. **Interpretación de IA sin alterar puntajes.** `ChasideAiService` aplica el contrato `ai-guardrails-v1`: fidelidad numérica exacta, anclaje a evidencia, aislamiento XML (`<verified_student_data>` y `<user_query>`), confidencialidad contra prompt-leakage/jailbreak y frontera vocacional sin diagnósticos clínicos. La temperatura se fija en `0.2` para reducir variación y se valida la respuesta: si contiene un número no presente en los datos verificados, se usa una respuesta segura de respaldo.
+
+### Cómo ejecutar las verificaciones
+
+Desde `vocational-guidance-ai-backend/`:
+
+```bash
+npx tsc --noEmit
+npx jest src/icfes/icfes.service.spec.ts src/chaside/services/chaside-ai.service.spec.ts src/assessments/utils/career-engine.stability.spec.ts --runInBand
+```
+
+La prueba de IA verifica tanto las directivas presentes en el prompt como el rechazo de una alteración numérica. La prueba ICFES compara los valores esperados con los valores extraídos, y la prueba del motor repite el cálculo para comprobar estabilidad.
+
+### Evidencia, trazabilidad y límites
+
+- La ruta pública reporta el estado de cada contrato, su evidencia y la versión de las garantías de IA, sin exponer prompts privados, claves ni información personal.
+- El endpoint ICFES utiliza un documento controlado. Para una conclusión más amplia se debe agregar un corpus de PDFs reales anonimizados y casos de regresión por formato.
+- La temperatura baja la variabilidad, pero un LLM no es la fuente matemática de los resultados. Los puntajes deben provenir del motor o del lector verificado.
+- El filtro numérico evita que una respuesta con cifras no verificadas llegue al usuario, aunque no reemplaza una revisión humana de calidad conversacional.
+- Nada de lo anterior constituye por sí solo validación psicométrica: siguen siendo necesarias pruebas con participantes, test-retest, validez de constructo y revisión metodológica independiente.
+
+Archivos principales de la auditoría:
+
+```text
+src/audit/audit.controller.ts
+src/assessments/utils/career-engine.stability.spec.ts
+src/icfes/icfes.service.spec.ts
+src/chaside/services/chaside-ai.service.spec.ts
+src/chaside/services/chaside-ai.service.ts
+```

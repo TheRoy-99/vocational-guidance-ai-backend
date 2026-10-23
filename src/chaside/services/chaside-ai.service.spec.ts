@@ -100,11 +100,41 @@ describe('ChasideAiService - fallback Gemini → Groq', () => {
         expect.objectContaining({
           model: 'gemini-3.8-flash',
           max_tokens: 500,
-          temperature: 0.6,
+          temperature: 0.2,
           reasoning_effort: 'none',
         }),
       );
       expect(mockGroqCreate).not.toHaveBeenCalled();
+    });
+
+    it('aplica los cuatro pilares de blindaje en el prompt y encapsula los datos', async () => {
+      mockGeminiCreate.mockResolvedValue(completion('Respuesta segura'));
+
+      await createService().answerVocationalChat(chatInput);
+
+      const [request] = mockGeminiCreate.mock.calls[0] as [
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      const systemPrompt = request.messages[0].content;
+      const userPrompt = request.messages.at(-1)?.content ?? '';
+
+      expect(systemPrompt).toContain('FIDELIDAD NUMÉRICA');
+      expect(systemPrompt).toContain('ANCLAJE A LA EVIDENCIA');
+      expect(systemPrompt).toContain('CONFIDENCIALIDAD');
+      expect(systemPrompt).toContain('FRONTERA DE ROL');
+      expect(userPrompt).toContain('<verified_student_data>');
+      expect(userPrompt).toContain('</verified_student_data>');
+      expect(userPrompt).toContain('<user_query>');
+      expect(userPrompt).toContain('</user_query>');
+    });
+
+    it('rechaza una respuesta generativa que altera un puntaje verificado', async () => {
+      mockGeminiCreate.mockResolvedValue(completion('Tu puntaje global fue 342/500.'));
+
+      const result = await createService().answerVocationalChat(chatInput);
+
+      expect(result.source).toBe('fallback');
+      expect(result.answer).not.toContain('342');
     });
 
     it('envía los turnos previos entre el prompt de sistema y la pregunta actual', async () => {
@@ -148,7 +178,7 @@ describe('ChasideAiService - fallback Gemini → Groq', () => {
         expect.objectContaining({
           model: 'openai/gpt-oss-20b',
           max_completion_tokens: 500,
-          temperature: 0.6,
+          temperature: 0.2,
           reasoning_effort: 'low',
           messages: geminiMessages,
         }),
