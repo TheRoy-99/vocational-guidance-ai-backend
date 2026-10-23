@@ -21,6 +21,7 @@ import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 
 const PASSWORD_RESET_PURPOSE = 'password-reset';
 const PASSWORD_RESET_TTL_MINUTES = 30;
+export const TERMS_AND_CONDITIONS_VERSION = '2026-10-23';
 
 export const FORGOT_PASSWORD_MESSAGE =
   'Si el correo está registrado, te enviamos un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada y la carpeta de spam.';
@@ -55,9 +56,11 @@ export class AuthService {
 
     // 3. Crear usuario con contraseña hasheada
     const user = await this.usersService.create({
-      ...dto,
+      name: dto.name,
       email,
       password: hashedPassword,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_AND_CONDITIONS_VERSION,
     });
 
     // 4. Retornar token directamente — UX: el usuario queda logueado al registrarse

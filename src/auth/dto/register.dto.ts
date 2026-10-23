@@ -1,7 +1,9 @@
 // class-validator garantiza que los datos malformados jamás lleguen
 // al servicio. El controlador queda 100% limpio de validaciones manuales.
 import {
+  Equals,
   IsEmail,
+  IsBoolean,
   IsString,
   MinLength,
   MaxLength,
@@ -33,4 +35,8 @@ export class RegisterDto {
     message: `La contraseña debe tener máximo ${PASSWORD_MAX_LENGTH} caracteres`,
   })
   password!: string;
+
+  @IsBoolean({ message: 'La aceptación de términos debe ser válida' })
+  @Equals(true, { message: 'Debes aceptar los términos y condiciones para crear tu cuenta' })
+  termsAccepted!: boolean;
 }
