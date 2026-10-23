@@ -22,6 +22,9 @@ model User {
   role      Role     @default(STUDENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Nullable para conservar los usuarios creados antes de introducir el consentimiento.
+  termsAcceptedAt DateTime?
+  termsVersion    String?
 
   assessments    VocationalAssessment[]
   chasideAssessments ChasideAssessment[]

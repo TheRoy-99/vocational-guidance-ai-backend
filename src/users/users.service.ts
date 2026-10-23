@@ -22,6 +22,8 @@ const USER_SELECT_FIELDS = {
   role: true,
   createdAt: true,
   updatedAt: true,
+  termsAcceptedAt: true,
+  termsVersion: true,
 } satisfies Prisma.UserSelect;
 
 @Injectable()
