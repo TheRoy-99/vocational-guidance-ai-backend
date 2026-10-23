@@ -77,6 +77,53 @@ export class IcfesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Verificación sin datos personales para la auditoría pública.
+   * Ejecuta las mismas funciones de extracción que usa un PDF real y compara
+   * cada valor con un caso controlado de Saber 11.
+   */
+  auditParserContract() {
+    const sample = this.normalizeText(`
+      Puntaje global 342 / 500. Tu puntaje superó al 71 %.
+      Lectura Crítica Puntaje 78 / 100 73 Estudiantes a nivel nacional.
+      Matemáticas Puntaje 64 / 100 58 Estudiantes a nivel nacional.
+      Sociales y Ciudadanas Puntaje 70 / 100 66 Estudiantes a nivel nacional.
+      Ciencias Naturales Puntaje 81 / 100 82 Estudiantes a nivel nacional.
+      Inglés Puntaje 55 / 100 49 Estudiantes a nivel nacional.
+    `);
+    const extracted = {
+      globalScore: this.extractGlobalScore(sample),
+      globalPercentile: this.extractGlobalPercentile(sample),
+      subjectScores: this.extractSubjectScores(sample),
+    };
+    const expected = {
+      globalScore: 342,
+      globalPercentile: 71,
+      subjectScores: [
+        ['Lectura Crítica', 78, 73],
+        ['Matemáticas', 64, 58],
+        ['Sociales y Ciudadanas', 70, 66],
+        ['Ciencias Naturales', 81, 82],
+        ['Inglés', 55, 49],
+      ],
+    } as const;
+    const exact = extracted.globalScore === expected.globalScore
+      && extracted.globalPercentile === expected.globalPercentile
+      && extracted.subjectScores.every((item, index) => {
+        const [subject, score, percentile] = expected.subjectScores[index];
+        return item.subject === subject && item.score === score && item.percentile === percentile;
+      });
+    return {
+      status: exact ? 'pass' : 'fail',
+      metric: `${extracted.subjectScores.length}/5 áreas extraídas exactamente`,
+      expected,
+      extracted,
+      evidence: exact
+        ? 'El parser conservó sin redondear el puntaje global, percentil y los cinco subpuntajes del caso controlado.'
+        : 'La salida extraída no coincide exactamente con el caso controlado.',
+    };
+  }
+
   async analyze(userId: string, file: UploadedPdfFile): Promise<IcfesAnalysis> {
     try {
       await this.ensureSchema();
@@ -284,7 +331,8 @@ export class IcfesService {
   private extractGlobalScore(text: string): number {
     const match = text.match(/Puntaje global[\s\S]{0,120}?(\d{2,3})\s*\/\s*500/i);
     if (match?.[1]) {
-      return Number(match[1]);
+      const score = Number(match[1]);
+      if (score >= 0 && score <= 500) return score;
     }
 
     throw new BadRequestException('No se encontró el puntaje global en el PDF');
@@ -292,7 +340,9 @@ export class IcfesService {
 
   private extractGlobalPercentile(text: string): number | null {
     const match = text.match(/Tu puntaje superó al\s+(\d{1,3})\s*%/i);
-    return match?.[1] ? Number(match[1]) : null;
+    if (!match?.[1]) return null;
+    const percentile = Number(match[1]);
+    return percentile >= 0 && percentile <= 100 ? percentile : null;
   }
 
   private extractSubjectScores(text: string): SubjectScore[] {
@@ -311,10 +361,19 @@ export class IcfesService {
         throw new BadRequestException(`No se pudo leer el puntaje de ${subject}`);
       }
 
+      const score = Number(scoreMatch[1]);
+      if (score < 0 || score > 100) {
+        throw new BadRequestException(`El puntaje de ${subject} está fuera de rango`);
+      }
+      const percentile = percentileMatch?.[1] ? Number(percentileMatch[1]) : null;
+      if (percentile !== null && (percentile < 0 || percentile > 100)) {
+        throw new BadRequestException(`El percentil de ${subject} está fuera de rango`);
+      }
+
       return {
         subject,
-        score: Number(scoreMatch[1]),
-        percentile: percentileMatch?.[1] ? Number(percentileMatch[1]) : null,
+        score,
+        percentile,
       };
     });
   }

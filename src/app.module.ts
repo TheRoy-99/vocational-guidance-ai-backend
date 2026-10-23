@@ -12,6 +12,7 @@ import { ChasideModule } from './chaside/chaside.module';
 import { IcfesModule } from './icfes/icfes.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { ReportsModule } from './reports/reports.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ReportsModule } from './reports/reports.module';
     IcfesModule,
     FeedbackModule,
     ReportsModule,
+    AuditModule,
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: throttlerOptionsFactory,
